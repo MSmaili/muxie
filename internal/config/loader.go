@@ -23,7 +23,8 @@ func NewFileLoader(path string) *FileLoader {
 }
 
 func (l *FileLoader) Load() (*Config, error) {
-	data, err := os.ReadFile(l.Path)
+	extendedPath := expandPath(l.Path)
+	data, err := os.ReadFile(extendedPath)
 	if err != nil {
 		return nil, fmt.Errorf("read config: %w", err)
 	}

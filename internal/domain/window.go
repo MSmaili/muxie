@@ -7,3 +7,5 @@ type Window struct {
 	Layout  string `json:"layout"`
 	Command string `json:"command"`
 }
+
+//todo: what about panes?
