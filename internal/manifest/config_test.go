@@ -30,7 +30,7 @@ func TestLoadFromMemory(t *testing.T) {
 				assert.Equal(t, len(windows), 2)
 				assert.Equal(t, windows[0].Name, "project")
 				assert.Equal(t, windows[0].Name, "project")
-				assert.Equal(t, windows[0].Index, 0)
+				assert.Nil(t, windows[0].Index)
 			},
 		},
 		{

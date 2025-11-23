@@ -48,7 +48,6 @@ func missingWindows(desiredMap, actualMap map[string]domain.Window) []domain.Win
 	var missing []domain.Window
 
 	for key, dw := range desiredMap {
-		fmt.Println(key)
 		_, exist := actualMap[key]
 		if !exist {
 			missing = append(missing, dw)
@@ -98,7 +97,7 @@ func windowsKey(windows []domain.Window) map[string]domain.Window {
 }
 
 func windowKey(w domain.Window) string {
-	return fmt.Sprintf("%d:%s", w.Index, w.Name)
+	return fmt.Sprintf("%s|%s", w.Name, w.Path)
 }
 
 func windowsEqual(w1, w2 domain.Window, mode domain.CompareMode) bool {
@@ -108,7 +107,7 @@ func windowsEqual(w1, w2 domain.Window, mode domain.CompareMode) bool {
 	if mode&domain.CompareIgnorePath == 0 && w1.Path != w2.Path {
 		return false
 	}
-	if mode&domain.CompareIgnoreIndex == 0 && w1.Index != w2.Index {
+	if mode&domain.CompareIgnoreIndex == 0 && !intPtrEqual(w1.Index, w2.Index) {
 		return false
 	}
 	if mode&domain.CompareIgnoreLayout == 0 && w1.Layout != w2.Layout {
@@ -118,4 +117,14 @@ func windowsEqual(w1, w2 domain.Window, mode domain.CompareMode) bool {
 		return false
 	}
 	return true
+}
+
+func intPtrEqual(a, b *int) bool {
+	if a == b {
+		return true // covers both nil
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
 }

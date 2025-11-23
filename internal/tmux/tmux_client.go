@@ -83,15 +83,15 @@ func (c *TmuxClient) ListWindows(session string) ([]domain.Window, error) {
 			continue
 		}
 
-		idx, err := strconv.Atoi(parts[2])
-		if err != nil {
-			return nil, err
-		}
+		// idx, err := strconv.Atoi(parts[2])
+		// if err != nil {
+		// 	return nil, err
+		// }
 
 		windows = append(windows, domain.Window{
-			Name:   parts[0],
-			Path:   parts[1],
-			Index:  idx,
+			Name: parts[0],
+			Path: parts[1],
+			// Index:  &idx,
 			Layout: parts[3],
 		})
 	}
@@ -168,4 +168,23 @@ func (c *TmuxClient) KillWindow(session, window string) error {
 	target := fmt.Sprintf("%s:%s", session, window)
 	_, err := c.run("kill-window", "-t", target)
 	return err
+}
+
+func (c *TmuxClient) BaseWindowIndex() (int, error) {
+	out, err := c.run("show-options", "-g", "base-index")
+	if err != nil {
+		return 0, err
+	}
+
+	parts := strings.Fields(out)
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("unexpected base-index output: %s", out)
+	}
+
+	idx, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, err
+	}
+
+	return idx, nil
 }

@@ -16,9 +16,6 @@ type WindowList []domain.Window
 func (w *WindowList) UnmarshalJSON(data []byte) error {
 	var objForm []domain.Window
 	if err := json.Unmarshal(data, &objForm); err == nil {
-		for i := range objForm {
-			objForm[i].Index = i
-		}
 		*w = objForm
 		return nil
 	}
@@ -27,11 +24,9 @@ func (w *WindowList) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &paths); err == nil {
 		windows := make([]domain.Window, len(paths))
 		for i, p := range paths {
-			// TODO: index can start from 1 in tmux config?
 			windows[i] = domain.Window{
-				Path:  p,
-				Index: i,
-				Name:  inferNameFromPath(p),
+				Path: p,
+				Name: inferNameFromPath(p),
 			}
 		}
 		*w = windows
