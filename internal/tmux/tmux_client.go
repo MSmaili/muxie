@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/MSmaili/tmx/internal/domain"
+	"github.com/MSmaili/tms/internal/domain"
 )
 
 type TmuxClient struct {

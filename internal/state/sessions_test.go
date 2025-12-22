@@ -3,7 +3,7 @@ package state
 import (
 	"testing"
 
-	"github.com/MSmaili/tmx/internal/domain"
+	"github.com/MSmaili/tms/internal/domain"
 	"github.com/stretchr/testify/assert"
 )
 

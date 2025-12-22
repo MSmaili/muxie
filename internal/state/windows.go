@@ -3,7 +3,7 @@ package state
 import (
 	"fmt"
 
-	"github.com/MSmaili/tmx/internal/domain"
+	"github.com/MSmaili/tms/internal/domain"
 )
 
 func compareWindows(diff *domain.Diff, desired, actual map[string][]domain.Window, mode domain.CompareMode) *domain.Diff {

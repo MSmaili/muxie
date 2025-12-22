@@ -1,7 +1,7 @@
 package state
 
 import (
-	"github.com/MSmaili/tmx/internal/domain"
+	"github.com/MSmaili/tms/internal/domain"
 )
 
 type Diff interface {

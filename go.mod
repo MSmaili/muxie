@@ -1,4 +1,4 @@
-module github.com/MSmaili/tmx
+module github.com/MSmaili/tms
 
 go 1.25.3
 

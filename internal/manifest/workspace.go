@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MSmaili/tmx/internal/domain"
+	"github.com/MSmaili/tms/internal/domain"
 )
 
 type Workspace struct {

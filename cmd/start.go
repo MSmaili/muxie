@@ -3,9 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/MSmaili/tmx/internal/domain"
-	"github.com/MSmaili/tmx/internal/manifest"
-	"github.com/MSmaili/tmx/internal/tmux"
+	"github.com/MSmaili/tms/internal/domain"
+	"github.com/MSmaili/tms/internal/manifest"
+	"github.com/MSmaili/tms/internal/tmux"
 	"github.com/spf13/cobra"
 )
 

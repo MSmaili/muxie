@@ -1,6 +1,6 @@
 package tmux
 
-import "github.com/MSmaili/tmx/internal/domain"
+import "github.com/MSmaili/tms/internal/domain"
 
 type Client interface {
 	ListSessions() (map[string][]domain.Window, error)
