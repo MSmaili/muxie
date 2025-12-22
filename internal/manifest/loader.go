@@ -49,12 +49,7 @@ func (l *FileLoader) Load() (*Workspace, error) {
 		return nil, err
 	}
 
-	normalized, err := normalize(&raw)
-	if err != nil {
-		return nil, err
-	}
-
-	return normalized, nil
+	return normalize(&raw)
 }
 
 func validate(cfg *Workspace) error {
@@ -118,10 +113,5 @@ func loadFromMemory(data []byte) (*Workspace, error) {
 		return nil, err
 	}
 
-	normalized, err := normalize(&raw)
-	if err != nil {
-		return nil, err
-	}
-
-	return normalized, nil
+	return normalize(&raw)
 }

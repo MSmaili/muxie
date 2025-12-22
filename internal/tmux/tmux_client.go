@@ -7,8 +7,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-
-	"github.com/MSmaili/tms/internal/domain"
 )
 
 type TmuxClient struct {
@@ -36,14 +34,14 @@ func (c *TmuxClient) run(args ...string) (string, error) {
 	return strings.TrimSpace(out.String()), nil
 }
 
-func (c *TmuxClient) ListSessions() (map[string][]domain.Window, error) {
+func (c *TmuxClient) ListSessions() (map[string][]Window, error) {
 	out, err := c.run("list-sessions", "-F", "#{session_name}")
 	if err != nil {
 		return nil, err
 	}
 
 	sessions := strings.Split(out, "\n")
-	result := make(map[string][]domain.Window)
+	result := make(map[string][]Window)
 
 	for _, session := range sessions {
 		if session == "" {
@@ -60,7 +58,7 @@ func (c *TmuxClient) ListSessions() (map[string][]domain.Window, error) {
 	return result, nil
 }
 
-func (c *TmuxClient) ListWindows(session string) ([]domain.Window, error) {
+func (c *TmuxClient) ListWindows(session string) ([]Window, error) {
 	out, err := c.run(
 		"list-windows",
 		"-t", session,
@@ -71,7 +69,7 @@ func (c *TmuxClient) ListWindows(session string) ([]domain.Window, error) {
 	}
 
 	lines := strings.Split(out, "\n")
-	windows := make([]domain.Window, 0, len(lines))
+	windows := make([]Window, 0, len(lines))
 
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
@@ -83,15 +81,9 @@ func (c *TmuxClient) ListWindows(session string) ([]domain.Window, error) {
 			continue
 		}
 
-		// idx, err := strconv.Atoi(parts[2])
-		// if err != nil {
-		// 	return nil, err
-		// }
-
-		windows = append(windows, domain.Window{
-			Name: parts[0],
-			Path: parts[1],
-			// Index:  &idx,
+		windows = append(windows, Window{
+			Name:   parts[0],
+			Path:   parts[1],
 			Layout: parts[3],
 		})
 	}
@@ -104,31 +96,27 @@ func (c *TmuxClient) HasSession(name string) bool {
 	return err == nil
 }
 
-func (c *TmuxClient) CreateSession(name string, opts *domain.Window) error {
+func (c *TmuxClient) CreateSession(name string, opts *WindowOpts) error {
 	args := []string{"new-session", "-d", "-s", name}
 
-	if opts == nil {
-		opts = &domain.Window{}
-	}
-
-	if opts.Path != "" {
-		args = append(args, "-c", opts.Path)
-	}
-
-	if opts.Name != "" {
-		args = append(args, "-n", opts.Name)
-	}
-
-	if opts.Command != "" {
-		args = append(args, opts.Command)
+	if opts != nil {
+		if opts.Path != "" {
+			args = append(args, "-c", opts.Path)
+		}
+		if opts.Name != "" {
+			args = append(args, "-n", opts.Name)
+		}
+		if opts.Command != "" {
+			args = append(args, opts.Command)
+		}
 	}
 
 	_, err := c.run(args...)
 	return err
 }
 
-func (c *TmuxClient) CreateWindow(session string, name string, opts domain.Window) error {
-	args := []string{"new-window", "-t", session, "-n", name, "-d"}
+func (c *TmuxClient) CreateWindow(session string, opts WindowOpts) error {
+	args := []string{"new-window", "-t", session, "-n", opts.Name, "-d"}
 
 	if opts.Path != "" {
 		args = append(args, "-c", opts.Path)
@@ -206,22 +194,22 @@ func (c *TmuxClient) BasePaneIndex() (int, error) {
 	return idx, nil
 }
 
-func (c *TmuxClient) SplitPane(session, window string, pane domain.Pane) error {
+func (c *TmuxClient) SplitPane(session, window string, opts PaneOpts) error {
 	target := fmt.Sprintf("%s:%s", session, window)
 	args := []string{"split-window", "-t", target, "-d"}
 
-	if pane.Split == "horizontal" {
+	if opts.Split == "horizontal" {
 		args = append(args, "-v")
 	} else {
 		args = append(args, "-h")
 	}
 
-	if pane.Size > 0 {
-		args = append(args, "-p", strconv.Itoa(pane.Size))
+	if opts.Size > 0 {
+		args = append(args, "-p", strconv.Itoa(opts.Size))
 	}
 
-	if pane.Path != "" {
-		args = append(args, "-c", pane.Path)
+	if opts.Path != "" {
+		args = append(args, "-c", opts.Path)
 	}
 
 	_, err := c.run(args...)
@@ -234,7 +222,7 @@ func (c *TmuxClient) SendKeys(session, window string, paneIndex int, keys string
 	return err
 }
 
-func (c *TmuxClient) ListPanes(session, window string) ([]domain.Pane, error) {
+func (c *TmuxClient) ListPanes(session, window string) ([]Pane, error) {
 	target := fmt.Sprintf("%s:%s", session, window)
 	out, err := c.run(
 		"list-panes",
@@ -246,7 +234,7 @@ func (c *TmuxClient) ListPanes(session, window string) ([]domain.Pane, error) {
 	}
 
 	lines := strings.Split(out, "\n")
-	panes := make([]domain.Pane, 0, len(lines))
+	panes := make([]Pane, 0, len(lines))
 
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
@@ -258,7 +246,7 @@ func (c *TmuxClient) ListPanes(session, window string) ([]domain.Pane, error) {
 			continue
 		}
 
-		panes = append(panes, domain.Pane{
+		panes = append(panes, Pane{
 			Path:    parts[0],
 			Command: parts[1],
 		})

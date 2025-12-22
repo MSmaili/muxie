@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/MSmaili/tms/internal/domain"
 	"github.com/MSmaili/tms/internal/manifest"
 	"github.com/MSmaili/tms/internal/tmux"
 	"github.com/spf13/cobra"
@@ -43,36 +42,35 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	c := manifest.NewFileLoader(workspacePath)
-
-	sessions, err := c.Load()
+	loader := manifest.NewFileLoader(workspacePath)
+	workspace, err := loader.Load()
 	if err != nil {
 		return fmt.Errorf("loading workspace: %w", err)
 	}
 
-	tmx, err := tmux.New()
+	client, err := tmux.New()
 	if err != nil {
 		return fmt.Errorf("initializing tmux client: %w", err)
 	}
 
-	basePaneIndex, err := tmx.BasePaneIndex()
+	basePaneIndex, err := client.BasePaneIndex()
 	if err != nil {
 		return fmt.Errorf("getting pane base index: %w", err)
 	}
 
-	firstSession, err := createSessions(sessions, tmx, basePaneIndex)
+	firstSession, err := createSessions(workspace, client, basePaneIndex)
 	if err != nil {
 		return fmt.Errorf("creating sessions: %w", err)
 	}
 
-	if err := tmx.Attach(firstSession); err != nil {
+	if err := client.Attach(firstSession); err != nil {
 		return fmt.Errorf("attaching to session: %w", err)
 	}
 
 	return nil
 }
 
-func createSessions(workspace *manifest.Workspace, tmx *tmux.TmuxClient, basePaneIndex int) (string, error) {
+func createSessions(workspace *manifest.Workspace, client *tmux.TmuxClient, basePaneIndex int) (string, error) {
 	var firstSession string
 
 	for sessionName, windows := range workspace.Sessions {
@@ -80,7 +78,7 @@ func createSessions(workspace *manifest.Workspace, tmx *tmux.TmuxClient, basePan
 			firstSession = sessionName
 		}
 
-		if err := createSession(tmx, sessionName, windows, basePaneIndex); err != nil {
+		if err := createSession(client, sessionName, windows, basePaneIndex); err != nil {
 			return "", fmt.Errorf("session %s: %w", sessionName, err)
 		}
 	}
@@ -88,62 +86,57 @@ func createSessions(workspace *manifest.Workspace, tmx *tmux.TmuxClient, basePan
 	return firstSession, nil
 }
 
-func createSession(tmx *tmux.TmuxClient, sessionName string, windows []domain.Window, basePaneIndex int) error {
+func createSession(client *tmux.TmuxClient, sessionName string, windows []manifest.Window, basePaneIndex int) error {
 	if len(windows) == 0 {
 		return fmt.Errorf("no windows defined")
 	}
 
-	createFirst := func(w domain.Window) error {
-		return tmx.CreateSession(sessionName, &w)
+	// Create first window with session
+	first := windows[0]
+	opts := &tmux.WindowOpts{Name: first.Name, Path: first.Path}
+	if err := client.CreateSession(sessionName, opts); err != nil {
+		return fmt.Errorf("window %s: %w", first.Name, err)
 	}
-	if err := createWindow(createFirst, tmx, sessionName, windows[0], basePaneIndex); err != nil {
-		return fmt.Errorf("window %s: %w", windows[0].Name, err)
+	if err := setupWindow(client, sessionName, first, basePaneIndex); err != nil {
+		return fmt.Errorf("window %s: %w", first.Name, err)
 	}
 
+	// Create additional windows
 	for i := 1; i < len(windows); i++ {
-		createAdditional := func(w domain.Window) error {
-			return tmx.CreateWindow(sessionName, w.Name, w)
+		w := windows[i]
+		opts := tmux.WindowOpts{Name: w.Name, Path: w.Path}
+		if err := client.CreateWindow(sessionName, opts); err != nil {
+			return fmt.Errorf("window %s: %w", w.Name, err)
 		}
-		if err := createWindow(createAdditional, tmx, sessionName, windows[i], basePaneIndex); err != nil {
-			return fmt.Errorf("window %s: %w", windows[i].Name, err)
+		if err := setupWindow(client, sessionName, w, basePaneIndex); err != nil {
+			return fmt.Errorf("window %s: %w", w.Name, err)
 		}
 	}
 
 	return nil
 }
 
-func createWindow(create func(domain.Window) error, tmx *tmux.TmuxClient, sessionName string, window domain.Window, basePaneIndex int) error {
-	windowForCreate := window
-	windowForCreate.Command = ""
-
-	if err := create(windowForCreate); err != nil {
-		return err
-	}
-
-	return setupWindow(tmx, sessionName, window, basePaneIndex)
-}
-
-func setupWindow(tmx *tmux.TmuxClient, sessionName string, window domain.Window, basePaneIndex int) error {
+func setupWindow(client *tmux.TmuxClient, sessionName string, window manifest.Window, basePaneIndex int) error {
 	if len(window.Panes) > 0 {
-		return setupPanes(tmx, sessionName, window.Name, window.Panes, basePaneIndex)
+		return setupPanes(client, sessionName, window.Name, window.Panes, basePaneIndex)
 	}
 
 	if window.Command != "" {
-		return tmx.SendKeys(sessionName, window.Name, basePaneIndex, window.Command)
+		return client.SendKeys(sessionName, window.Name, basePaneIndex, window.Command)
 	}
 
 	return nil
 }
 
-func setupPanes(tmx *tmux.TmuxClient, sessionName, windowName string, panes []domain.Pane, basePaneIndex int) error {
+func setupPanes(client *tmux.TmuxClient, sessionName, windowName string, panes []manifest.Pane, basePaneIndex int) error {
 	if panes[0].Command != "" {
-		if err := tmx.SendKeys(sessionName, windowName, basePaneIndex, panes[0].Command); err != nil {
+		if err := client.SendKeys(sessionName, windowName, basePaneIndex, panes[0].Command); err != nil {
 			return fmt.Errorf("pane 0: %w", err)
 		}
 	}
 
 	for i := 1; i < len(panes); i++ {
-		if err := createPane(tmx, sessionName, windowName, panes[i], basePaneIndex+i); err != nil {
+		if err := createPane(client, sessionName, windowName, panes[i], basePaneIndex+i); err != nil {
 			return fmt.Errorf("pane %d: %w", i, err)
 		}
 	}
@@ -151,13 +144,14 @@ func setupPanes(tmx *tmux.TmuxClient, sessionName, windowName string, panes []do
 	return nil
 }
 
-func createPane(tmx *tmux.TmuxClient, sessionName, windowName string, pane domain.Pane, paneIndex int) error {
-	if err := tmx.SplitPane(sessionName, windowName, pane); err != nil {
+func createPane(client *tmux.TmuxClient, sessionName, windowName string, pane manifest.Pane, paneIndex int) error {
+	opts := tmux.PaneOpts{Path: pane.Path, Split: pane.Split, Size: pane.Size}
+	if err := client.SplitPane(sessionName, windowName, opts); err != nil {
 		return err
 	}
 
 	if pane.Command != "" {
-		return tmx.SendKeys(sessionName, windowName, paneIndex, pane.Command)
+		return client.SendKeys(sessionName, windowName, paneIndex, pane.Command)
 	}
 
 	return nil
