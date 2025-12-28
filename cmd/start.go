@@ -10,6 +10,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	dryRun bool
+	force  bool
+)
+
 var startCmd = &cobra.Command{
 	Use:   "start [workspace-name-or-path]",
 	Short: "Start a tmux workspace",
@@ -17,6 +22,8 @@ var startCmd = &cobra.Command{
 }
 
 func init() {
+	startCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print plan without executing")
+	startCmd.Flags().BoolVar(&force, "force", false, "Kill extra sessions/windows and recreate mismatched")
 	rootCmd.AddCommand(startCmd)
 }
 
@@ -55,11 +62,23 @@ func runStart(cmd *cobra.Command, args []string) error {
 	paneBaseIndex, _ := tmux.RunQuery(client, tmux.PaneBaseIndexQuery{})
 
 	planDiff := stateDiffToPlanDiff(stateDiff, desired)
-	strategy := &plan.MergeStrategy{PaneBaseIndex: paneBaseIndex}
+
+	var strategy plan.Strategy
+	if force {
+		strategy = &plan.ForceStrategy{PaneBaseIndex: paneBaseIndex}
+	} else {
+		strategy = &plan.MergeStrategy{PaneBaseIndex: paneBaseIndex}
+	}
 	p := strategy.Plan(planDiff)
 
 	if p.IsEmpty() {
 		fmt.Println("Workspace already up to date")
+	} else if dryRun {
+		fmt.Println("Dry run - actions to execute:")
+		for _, action := range p.Actions {
+			fmt.Printf("  %s\n", action.Comment())
+		}
+		return nil
 	} else {
 		actions := planActionsToTmuxActions(p.Actions)
 		if err := client.ExecuteBatch(actions); err != nil {
