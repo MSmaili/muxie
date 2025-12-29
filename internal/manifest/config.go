@@ -27,6 +27,7 @@ func (w *WindowList) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &paths); err == nil {
 		windows := make([]domain.Window, len(paths))
 		for i, p := range paths {
+			// TODO: index can start from 1 in tmux config?
 			windows[i] = domain.Window{
 				Path:  p,
 				Index: i,

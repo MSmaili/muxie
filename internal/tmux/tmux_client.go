@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/MSmaili/tmx/internal/domain"
@@ -82,10 +83,15 @@ func (c *TmuxClient) ListWindows(session string) ([]domain.Window, error) {
 			continue
 		}
 
+		idx, err := strconv.Atoi(parts[2])
+		if err != nil {
+			return nil, err
+		}
+
 		windows = append(windows, domain.Window{
-			Name: parts[0],
-			Path: parts[1],
-			// Index:  parse[2],
+			Name:   parts[0],
+			Path:   parts[1],
+			Index:  idx,
 			Layout: parts[3],
 		})
 	}
@@ -122,13 +128,7 @@ func (c *TmuxClient) CreateSession(name string, opts *domain.Window) error {
 }
 
 func (c *TmuxClient) CreateWindow(session string, name string, opts domain.Window) error {
-	var target string
-
-	if opts.Index != nil {
-		target = fmt.Sprintf("%s:%d", session, *opts.Index)
-	} else {
-		target = session + ":"
-	}
+	target := fmt.Sprintf("%s:%d", session, opts.Index)
 
 	args := []string{"new-window", "-t", target, "-n", name, "-d"}
 
