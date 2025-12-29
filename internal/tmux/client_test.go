@@ -53,8 +53,8 @@ func TestRunQuery(t *testing.T) {
 	}{
 		{
 			name:   "success",
-			output: "dev|editor|~/code|vim",
-			want:   []Session{{Name: "dev", Windows: []Window{{Name: "editor", Path: "~/code", Panes: []Pane{{Path: "~/code", Command: "vim"}}}}}},
+			output: "dev|editor|~/code|vim|",
+			want:   []Session{{Name: "dev", WorkspacePath: "", Windows: []Window{{Name: "editor", Path: "~/code", Panes: []Pane{{Path: "~/code", Command: "vim"}}}}}},
 		},
 		{
 			name:    "run error",

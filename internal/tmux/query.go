@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -11,14 +12,15 @@ type Query[T any] interface {
 }
 
 type Session struct {
-	Name    string
-	Windows []Window
+	Name          string
+	WorkspacePath string
+	Windows       []Window
 }
 
 type LoadStateQuery struct{}
 
 func (q LoadStateQuery) Args() []string {
-	return []string{"list-panes", "-a", "-F", "#{session_name}|#{window_name}|#{pane_current_path}|#{pane_current_command}"}
+	return []string{"list-panes", "-a", "-F", "#{session_name}|#{window_name}|#{pane_current_path}|#{pane_current_command}|#{TMS_WORKSPACE_PATH}"}
 }
 
 func (q LoadStateQuery) Parse(output string) ([]Session, error) {
@@ -35,15 +37,15 @@ func (q LoadStateQuery) Parse(output string) ([]Session, error) {
 		}
 
 		parts := strings.Split(line, "|")
-		if len(parts) < 4 {
+		if len(parts) < 5 {
 			continue
 		}
 
-		sessName, winName, panePath, paneCmd := parts[0], parts[1], parts[2], parts[3]
+		sessName, winName, panePath, paneCmd, workspacePath := parts[0], parts[1], parts[2], parts[3], parts[4]
 
 		session, ok := sessionMap[sessName]
 		if !ok {
-			session = &Session{Name: sessName}
+			session = &Session{Name: sessName, WorkspacePath: workspacePath}
 			sessionMap[sessName] = session
 		}
 
@@ -84,4 +86,18 @@ func (q PaneBaseIndexQuery) Parse(output string) (int, error) {
 	var idx int
 	_, err := fmt.Sscanf(output, "%d", &idx)
 	return idx, err
+}
+
+// GetCurrentSession returns the current tmux session name from $TMUX env var
+// Returns empty string if not in a tmux session
+func GetCurrentSession() string {
+	tmuxEnv := strings.TrimSpace(os.Getenv("TMUX"))
+	if tmuxEnv == "" {
+		return ""
+	}
+	parts := strings.Split(tmuxEnv, ",")
+	if len(parts) < 3 {
+		return ""
+	}
+	return parts[2]
 }

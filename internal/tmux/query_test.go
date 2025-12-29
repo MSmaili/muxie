@@ -10,7 +10,7 @@ func TestLoadStateQuery(t *testing.T) {
 	q := LoadStateQuery{}
 
 	t.Run("args", func(t *testing.T) {
-		assert.Equal(t, []string{"list-panes", "-a", "-F", "#{session_name}|#{window_name}|#{pane_current_path}|#{pane_current_command}"}, q.Args())
+		assert.Equal(t, []string{"list-panes", "-a", "-F", "#{session_name}|#{window_name}|#{pane_current_path}|#{pane_current_command}|#{TMS_WORKSPACE_PATH}"}, q.Args())
 	})
 
 	tests := []struct {
@@ -21,9 +21,10 @@ func TestLoadStateQuery(t *testing.T) {
 		{"empty", "", []Session{}},
 		{
 			name:   "single session single window single pane",
-			output: "dev|editor|~/code|vim",
+			output: "dev|editor|~/code|vim|/path/to/workspace.yaml",
 			want: []Session{{
-				Name: "dev",
+				Name:          "dev",
+				WorkspacePath: "/path/to/workspace.yaml",
 				Windows: []Window{{
 					Name:  "editor",
 					Path:  "~/code",
@@ -33,9 +34,10 @@ func TestLoadStateQuery(t *testing.T) {
 		},
 		{
 			name:   "multiple panes same window",
-			output: "dev|editor|~/code|vim\ndev|editor|~/api|node",
+			output: "dev|editor|~/code|vim|\ndev|editor|~/api|node|",
 			want: []Session{{
-				Name: "dev",
+				Name:          "dev",
+				WorkspacePath: "",
 				Windows: []Window{{
 					Name:  "editor",
 					Path:  "~/code",
@@ -45,9 +47,10 @@ func TestLoadStateQuery(t *testing.T) {
 		},
 		{
 			name:   "multiple windows",
-			output: "dev|editor|~/code|vim\ndev|server|~/api|node",
+			output: "dev|editor|~/code|vim|/ws.yaml\ndev|server|~/api|node|/ws.yaml",
 			want: []Session{{
-				Name: "dev",
+				Name:          "dev",
+				WorkspacePath: "/ws.yaml",
 				Windows: []Window{
 					{Name: "editor", Path: "~/code", Panes: []Pane{{Path: "~/code", Command: "vim"}}},
 					{Name: "server", Path: "~/api", Panes: []Pane{{Path: "~/api", Command: "node"}}},
