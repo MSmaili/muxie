@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+const DefaultExt = ".yaml"
+
 type Resolver struct {
 	configDir func() (string, error)
 }
@@ -27,6 +29,32 @@ func (r *Resolver) Resolve(nameOrPath string) (string, error) {
 	}
 
 	return r.findNamedWorkspace(nameOrPath)
+}
+
+func (r *Resolver) NamedPath(name string) (string, error) {
+	configDir, err := r.configDir()
+	if err != nil {
+		return "", fmt.Errorf("getting config dir: %w", err)
+	}
+
+	if !hasValidExt(name) {
+		name = name + DefaultExt
+	}
+
+	return filepath.Join(configDir, "workspaces", name), nil
+}
+
+func (r *Resolver) LocalPath() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("getting current directory: %w", err)
+	}
+	return filepath.Join(cwd, ".tms"+DefaultExt), nil
+}
+
+func hasValidExt(name string) bool {
+	ext := filepath.Ext(name)
+	return ext == ".yaml" || ext == ".yml" || ext == ".json"
 }
 
 func (r *Resolver) isPath(s string) bool {

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/MSmaili/tms/internal/manifest"
@@ -37,8 +36,8 @@ func init() {
 }
 
 func runSave(cmd *cobra.Command, args []string) error {
-	if savePath != "" && saveName != "" {
-		return fmt.Errorf("cannot use both -p and -n flags")
+	if err := validateSaveFlags(); err != nil {
+		return err
 	}
 
 	client, err := tmux.New()
@@ -46,100 +45,113 @@ func runSave(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("initializing tmux client: %w", err)
 	}
 
-	result, err := tmux.RunQuery(client, tmux.LoadStateQuery{})
-	if err != nil {
-		return fmt.Errorf("querying tmux state: %w", err)
-	}
-
-	if len(result.Sessions) == 0 {
-		return fmt.Errorf("no tmux sessions found")
-	}
-
-	var targetSessions []tmux.Session
-	var workspacePath string
-
-	if saveAll {
-		targetSessions = result.Sessions
-	} else {
-		if result.CurrentSession == "" {
-			return fmt.Errorf("not in a tmux session")
-		}
-
-		var found bool
-		for _, s := range result.Sessions {
-			if s.Name == result.CurrentSession {
-				targetSessions = []tmux.Session{s}
-				workspacePath = s.WorkspacePath
-				found = true
-				break
-			}
-		}
-		if !found {
-			return fmt.Errorf("session %q not found", result.CurrentSession)
-		}
-	}
-
-	outputPath, err := determinePath(args, workspacePath, saveAll)
+	sessions, existingPath, err := getTargetSessions(client)
 	if err != nil {
 		return err
 	}
 
-	workspace := convertToWorkspace(targetSessions)
+	outputPath, err := determineSavePath(args, existingPath)
+	if err != nil {
+		return err
+	}
 
+	return saveWorkspace(client, sessions, outputPath)
+}
+
+func validateSaveFlags() error {
+	if savePath != "" && saveName != "" {
+		return fmt.Errorf("cannot use both -p and -n flags")
+	}
+	return nil
+}
+
+func getTargetSessions(client tmux.Client) ([]tmux.Session, string, error) {
+	result, err := tmux.RunQuery(client, tmux.LoadStateQuery{})
+	if err != nil {
+		return nil, "", fmt.Errorf("querying tmux state: %w", err)
+	}
+
+	if len(result.Sessions) == 0 {
+		return nil, "", fmt.Errorf("no tmux sessions found")
+	}
+
+	if saveAll {
+		return result.Sessions, "", nil
+	}
+
+	return findCurrentSession(result)
+}
+
+func findCurrentSession(result tmux.LoadStateResult) ([]tmux.Session, string, error) {
+	if result.CurrentSession == "" {
+		return nil, "", fmt.Errorf("not in a tmux session")
+	}
+
+	for _, s := range result.Sessions {
+		if s.Name == result.CurrentSession {
+			return []tmux.Session{s}, s.WorkspacePath, nil
+		}
+	}
+
+	return nil, "", fmt.Errorf("session %q not found", result.CurrentSession)
+}
+
+func determineSavePath(args []string, existingPath string) (string, error) {
+	if savePath != "" {
+		return savePath, nil
+	}
+
+	resolver := manifest.NewResolver()
+
+	if saveName != "" {
+		return resolver.NamedPath(saveName)
+	}
+
+	if len(args) > 0 && args[0] == "." {
+		return resolver.LocalPath()
+	}
+
+	if saveAll {
+		return "", fmt.Errorf("--all requires -p <path>, -n <name>, or .")
+	}
+
+	if existingPath != "" {
+		return existingPath, nil
+	}
+
+	return "", fmt.Errorf("no workspace path found. Use -p <path>, -n <name>, or . for current directory")
+}
+
+func saveWorkspace(client tmux.Client, sessions []tmux.Session, outputPath string) error {
 	absPath, err := filepath.Abs(outputPath)
 	if err != nil {
 		return fmt.Errorf("resolving absolute path: %w", err)
 	}
 
+	workspace := convertToWorkspace(sessions)
+
 	if err := manifest.Write(workspace, absPath); err != nil {
 		return fmt.Errorf("writing workspace: %w", err)
 	}
 
-	sessionNames := make([]string, 0, len(targetSessions))
-	for _, s := range targetSessions {
-		sessionNames = append(sessionNames, s.Name)
-	}
-
-	if err := client.ExecuteBatch(buildSetEnvActions(sessionNames, absPath)); err != nil {
-		return fmt.Errorf("updating environment: %w", err)
+	if err := updateSessionEnv(client, sessions, absPath); err != nil {
+		return err
 	}
 
 	fmt.Printf("Saved to %s\n", absPath)
 	return nil
 }
 
-func determinePath(args []string, workspacePath string, requireExplicit bool) (string, error) {
-	useDot := len(args) > 0 && args[0] == "."
-
-	if savePath != "" {
-		return savePath, nil
+func updateSessionEnv(client tmux.Client, sessions []tmux.Session, path string) error {
+	names := make([]string, len(sessions))
+	for i, s := range sessions {
+		names[i] = s.Name
 	}
 
-	if saveName != "" {
-		configDir, err := manifest.GetConfigDir()
-		if err != nil {
-			return "", fmt.Errorf("getting config dir: %w", err)
-		}
-		return filepath.Join(configDir, "workspaces", saveName+".yaml"), nil
+	if err := client.ExecuteBatch(buildSetEnvActions(names, path)); err != nil {
+		return fmt.Errorf("updating environment: %w", err)
 	}
-
-	if useDot {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return "", fmt.Errorf("getting current directory: %w", err)
-		}
-		return filepath.Join(cwd, ".tms.yaml"), nil
-	}
-
-	if requireExplicit {
-		return "", fmt.Errorf("--all requires -p <path>, -n <name>, or . ")
-	}
-
-	if workspacePath != "" {
-		return workspacePath, nil
-	}
-
-	return "", fmt.Errorf("no workspace path found. Use -p <path>, -n <name>, or . for current directory")
+	return nil
 }
 
 func convertToWorkspace(sessions []tmux.Session) *manifest.Workspace {
@@ -148,22 +160,30 @@ func convertToWorkspace(sessions []tmux.Session) *manifest.Workspace {
 	}
 
 	for _, sess := range sessions {
-		windows := make([]manifest.Window, 0, len(sess.Windows))
-		for _, w := range sess.Windows {
-			win := manifest.Window{
-				Name: w.Name,
-				Path: w.Path,
-			}
-			if len(w.Panes) > 1 {
-				win.Panes = make([]manifest.Pane, len(w.Panes))
-				for j, p := range w.Panes {
-					win.Panes[j] = manifest.Pane{Path: p.Path}
-				}
-			}
-			windows = append(windows, win)
-		}
-		ws.Sessions[sess.Name] = windows
+		ws.Sessions[sess.Name] = convertWindows(sess.Windows)
 	}
 
 	return ws
+}
+
+func convertWindows(windows []tmux.Window) []manifest.Window {
+	result := make([]manifest.Window, len(windows))
+	for i, w := range windows {
+		result[i] = manifest.Window{
+			Name: w.Name,
+			Path: w.Path,
+		}
+		if len(w.Panes) > 1 {
+			result[i].Panes = convertPanes(w.Panes)
+		}
+	}
+	return result
+}
+
+func convertPanes(panes []tmux.Pane) []manifest.Pane {
+	result := make([]manifest.Pane, len(panes))
+	for i, p := range panes {
+		result[i] = manifest.Pane{Path: p.Path}
+	}
+	return result
 }

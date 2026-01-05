@@ -133,8 +133,8 @@ func listWorkspaceFiles() error {
 		results = make(map[string]*manifest.Workspace)
 	)
 
-	for _, name := range names {
-		name, path := name, paths[name]
+	for _, wname := range names {
+		name, path := wname, paths[wname]
 		g.Go(func() error {
 			loader := manifest.NewFileLoader(path)
 			ws, err := loader.Load()
@@ -208,7 +208,7 @@ func workspaceToItems(name string, ws *manifest.Workspace) []listItem {
 				lw := listWindow{Name: win.Name}
 				if listPanes {
 					paneCount := max(1, len(win.Panes))
-					for p := 0; p < paneCount; p++ {
+					for p := range paneCount {
 						lw.Panes = append(lw.Panes, p)
 					}
 				}
