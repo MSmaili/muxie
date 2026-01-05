@@ -46,12 +46,12 @@ func runSave(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("initializing tmux client: %w", err)
 	}
 
-	sessions, err := tmux.RunQuery(client, tmux.LoadStateQuery{})
+	result, err := tmux.RunQuery(client, tmux.LoadStateQuery{})
 	if err != nil {
 		return fmt.Errorf("querying tmux state: %w", err)
 	}
 
-	if len(sessions) == 0 {
+	if len(result.Sessions) == 0 {
 		return fmt.Errorf("no tmux sessions found")
 	}
 
@@ -59,16 +59,15 @@ func runSave(cmd *cobra.Command, args []string) error {
 	var workspacePath string
 
 	if saveAll {
-		targetSessions = sessions
+		targetSessions = result.Sessions
 	} else {
-		currentSession := tmux.GetCurrentSession()
-		if currentSession == "" {
+		if result.CurrentSession == "" {
 			return fmt.Errorf("not in a tmux session")
 		}
 
 		var found bool
-		for _, s := range sessions {
-			if s.Name == currentSession {
+		for _, s := range result.Sessions {
+			if s.Name == result.CurrentSession {
 				targetSessions = []tmux.Session{s}
 				workspacePath = s.WorkspacePath
 				found = true
@@ -76,7 +75,7 @@ func runSave(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if !found {
-			return fmt.Errorf("session %q not found", currentSession)
+			return fmt.Errorf("session %q not found", result.CurrentSession)
 		}
 	}
 
@@ -133,7 +132,7 @@ func determinePath(args []string, workspacePath string, requireExplicit bool) (s
 	}
 
 	if requireExplicit {
-		return "", fmt.Errorf("--all requires -p <path>, -n <name>, or .")
+		return "", fmt.Errorf("--all requires -p <path>, -n <name>, or . ")
 	}
 
 	if workspacePath != "" {

@@ -127,11 +127,6 @@ func listWorkspaceFiles() error {
 		return outputNames(names)
 	}
 
-	type result struct {
-		name string
-		ws   *manifest.Workspace
-	}
-
 	var (
 		g       errgroup.Group
 		mu      sync.Mutex
@@ -175,19 +170,19 @@ func listTmuxSessions() error {
 		return fmt.Errorf("initializing tmux client: %w", err)
 	}
 
-	sessions, err := tmux.RunQuery(client, tmux.LoadStateQuery{})
+	result, err := tmux.RunQuery(client, tmux.LoadStateQuery{})
 	if err != nil {
 		return fmt.Errorf("querying tmux: %w", err)
 	}
 
-	// Filter to current session if requested
+	sessions := result.Sessions
+
 	if listCurrent {
-		currentName := tmux.GetCurrentSession()
-		if currentName == "" {
+		if result.CurrentSession == "" {
 			return fmt.Errorf("not in a tmux session")
 		}
 		for _, sess := range sessions {
-			if sess.Name == currentName {
+			if sess.Name == result.CurrentSession {
 				sessions = []tmux.Session{sess}
 				break
 			}

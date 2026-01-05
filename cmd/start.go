@@ -149,12 +149,12 @@ func manifestToState(ws *manifest.Workspace) *state.State {
 func queryTmuxState(client tmux.Client) (*state.State, error) {
 	s := state.NewState()
 
-	sessions, err := tmux.RunQuery(client, tmux.LoadStateQuery{})
+	result, err := tmux.RunQuery(client, tmux.LoadStateQuery{})
 	if err != nil {
 		return s, nil
 	}
 
-	for _, sess := range sessions {
+	for _, sess := range result.Sessions {
 		session := s.AddSession(sess.Name)
 		for _, w := range sess.Windows {
 			window := &state.Window{Name: w.Name, Path: w.Path, Layout: w.Layout}

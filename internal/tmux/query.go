@@ -3,7 +3,6 @@ package tmux
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 )
 
@@ -18,15 +17,23 @@ type Session struct {
 	Windows       []Window
 }
 
+type LoadStateResult struct {
+	Sessions       []Session
+	CurrentSession string
+}
+
 type LoadStateQuery struct{}
 
 func (q LoadStateQuery) Args() []string {
-	return []string{"list-panes", "-a", "-F", "#{session_name}|#{window_name}|#{pane_current_path}|#{pane_current_command}|#{TMS_WORKSPACE_PATH}"}
+	return []string{"list-panes", "-a", "-F", "#{session_id}|#{session_name}|#{window_name}|#{pane_current_path}|#{pane_current_command}|#{TMS_WORKSPACE_PATH}"}
 }
 
-func (q LoadStateQuery) Parse(output string) ([]Session, error) {
+func (q LoadStateQuery) Parse(output string) (LoadStateResult, error) {
+	result := LoadStateResult{}
+	currentSessionID := getCurrentSessionID()
+
 	if output == "" {
-		return []Session{}, nil
+		return result, nil
 	}
 
 	sessionMap := make(map[string]*Session)
@@ -38,11 +45,15 @@ func (q LoadStateQuery) Parse(output string) ([]Session, error) {
 		}
 
 		parts := strings.Split(line, "|")
-		if len(parts) < 5 {
+		if len(parts) < 6 {
 			continue
 		}
 
-		sessName, winName, panePath, paneCmd, workspacePath := parts[0], parts[1], parts[2], parts[3], parts[4]
+		sessID, sessName, winName, panePath, paneCmd, workspacePath := parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
+
+		if sessID == currentSessionID {
+			result.CurrentSession = sessName
+		}
 
 		session, ok := sessionMap[sessName]
 		if !ok {
@@ -65,12 +76,24 @@ func (q LoadStateQuery) Parse(output string) ([]Session, error) {
 		window.Panes = append(window.Panes, Pane{Path: panePath, Command: paneCmd})
 	}
 
-	sessions := make([]Session, 0, len(sessionMap))
+	result.Sessions = make([]Session, 0, len(sessionMap))
 	for _, s := range sessionMap {
-		sessions = append(sessions, *s)
+		result.Sessions = append(result.Sessions, *s)
 	}
 
-	return sessions, nil
+	return result, nil
+}
+
+func getCurrentSessionID() string {
+	tmuxEnv := os.Getenv("TMUX")
+	if tmuxEnv == "" {
+		return ""
+	}
+	parts := strings.Split(tmuxEnv, ",")
+	if len(parts) < 3 {
+		return ""
+	}
+	return "$" + parts[2]
 }
 
 type PaneBaseIndexQuery struct{}
@@ -87,16 +110,4 @@ func (q PaneBaseIndexQuery) Parse(output string) (int, error) {
 	var idx int
 	_, err := fmt.Sscanf(output, "%d", &idx)
 	return idx, err
-}
-
-func GetCurrentSession() string {
-	tmuxEnv := strings.TrimSpace(os.Getenv("TMUX"))
-	if tmuxEnv == "" {
-		return ""
-	}
-	out, err := exec.Command("tmux", "display-message", "-p", "#S").Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
 }
