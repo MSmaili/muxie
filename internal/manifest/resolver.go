@@ -51,7 +51,7 @@ func (r *Resolver) findNamedWorkspace(name string) (string, error) {
 		return "", err
 	}
 
-	workspacesDir := filepath.Join(configDir, "tms", "workspaces")
+	workspacesDir := filepath.Join(configDir, "workspaces")
 	for _, ext := range []string{".yaml", ".yml", ".json"} {
 		path := filepath.Join(workspacesDir, name+ext)
 		if _, err := os.Stat(path); err == nil {

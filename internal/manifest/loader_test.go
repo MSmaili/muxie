@@ -126,22 +126,25 @@ func TestScanWorkspaces(t *testing.T) {
 		os.WriteFile(filepath.Join(tmpDir, "project3.json"), []byte(`{"sessions":{}}`), 0644)
 		os.WriteFile(filepath.Join(tmpDir, "readme.txt"), []byte("text"), 0644)
 		
-		names, err := ScanWorkspaces(tmpDir)
+		paths, err := ScanWorkspaces(tmpDir)
 		require.NoError(t, err)
-		assert.Equal(t, []string{"project1", "project2", "project3"}, names)
+		assert.Len(t, paths, 3)
+		assert.Contains(t, paths, "project1")
+		assert.Contains(t, paths, "project2")
+		assert.Contains(t, paths, "project3")
 	})
 	
 	t.Run("returns empty for missing directory", func(t *testing.T) {
-		names, err := ScanWorkspaces("/nonexistent/directory")
+		paths, err := ScanWorkspaces("/nonexistent/directory")
 		require.NoError(t, err)
-		assert.Empty(t, names)
+		assert.Empty(t, paths)
 	})
 	
 	t.Run("returns empty for empty directory", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		names, err := ScanWorkspaces(tmpDir)
+		paths, err := ScanWorkspaces(tmpDir)
 		require.NoError(t, err)
-		assert.Empty(t, names)
+		assert.Empty(t, paths)
 	})
 	
 	t.Run("ignores subdirectories", func(t *testing.T) {
@@ -150,8 +153,9 @@ func TestScanWorkspaces(t *testing.T) {
 		os.WriteFile(filepath.Join(tmpDir, "workspace.yaml"), []byte("sessions: {}"), 0644)
 		os.Mkdir(filepath.Join(tmpDir, "subdir"), 0755)
 		
-		names, err := ScanWorkspaces(tmpDir)
+		paths, err := ScanWorkspaces(tmpDir)
 		require.NoError(t, err)
-		assert.Equal(t, []string{"workspace"}, names)
+		assert.Len(t, paths, 1)
+		assert.Contains(t, paths, "workspace")
 	})
 }

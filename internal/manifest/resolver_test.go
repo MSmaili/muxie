@@ -31,7 +31,7 @@ func TestResolverExplicitPathNotFound(t *testing.T) {
 
 func TestResolverNamedWorkspace(t *testing.T) {
 	tmpDir := t.TempDir()
-	workspacesDir := filepath.Join(tmpDir, "tms", "workspaces")
+	workspacesDir := filepath.Join(tmpDir, "workspaces")
 	err := os.MkdirAll(workspacesDir, 0755)
 	require.NoError(t, err)
 
@@ -80,7 +80,7 @@ func TestResolverNotFound(t *testing.T) {
 
 func TestResolverPrefersNamedOverLocal(t *testing.T) {
 	tmpDir := t.TempDir()
-	workspacesDir := filepath.Join(tmpDir, "tms", "workspaces")
+	workspacesDir := filepath.Join(tmpDir, "workspaces")
 	err := os.MkdirAll(workspacesDir, 0755)
 	require.NoError(t, err)
 
