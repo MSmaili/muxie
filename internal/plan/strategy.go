@@ -118,5 +118,10 @@ func addPanesAndCommands(plan *Plan, sessionName string, window Window, paneBase
 				Command: pane.Command,
 			})
 		}
+		if pane.Zoom {
+			plan.Actions = append(plan.Actions, ZoomPaneAction{
+				Target: fmt.Sprintf("%s.%d", target, i+paneBaseIndex),
+			})
+		}
 	}
 }

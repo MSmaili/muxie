@@ -158,3 +158,22 @@ func (a SelectLayoutAction) Validate() error {
 	}
 	return nil
 }
+
+type ZoomPaneAction struct {
+	Target string
+}
+
+func (a ZoomPaneAction) ToCommand() string {
+	return fmt.Sprintf("resize-pane -Z -t %q", a.Target)
+}
+
+func (a ZoomPaneAction) Comment() string {
+	return fmt.Sprintf("# Zoom pane: %s", a.Target)
+}
+
+func (a ZoomPaneAction) Validate() error {
+	if a.Target == "" {
+		return errors.New("zoom pane target cannot be empty")
+	}
+	return nil
+}

@@ -133,3 +133,48 @@ func TestValidate_WindowsWithoutNames(t *testing.T) {
 		t.Errorf("expected windows without names to be valid, got: %v", err)
 	}
 }
+
+func TestValidate_MultipleZoomedPanes(t *testing.T) {
+	ws := &Workspace{
+		Sessions: map[string]WindowList{
+			"dev": {
+				{
+					Name: "editor",
+					Panes: []Pane{
+						{Path: "/home/user", Zoom: true},
+						{Path: "/home/user", Zoom: true},
+					},
+				},
+			},
+		},
+	}
+
+	err := Validate(ws)
+	if err == nil {
+		t.Error("expected error for multiple zoomed panes in one window")
+	}
+	if !strings.Contains(err.Error(), "zoom=true") {
+		t.Errorf("expected 'zoom=true' in error, got: %v", err)
+	}
+}
+
+func TestValidate_SingleZoomedPane(t *testing.T) {
+	ws := &Workspace{
+		Sessions: map[string]WindowList{
+			"dev": {
+				{
+					Name: "editor",
+					Panes: []Pane{
+						{Path: "/home/user", Zoom: true},
+						{Path: "/home/user"},
+					},
+				},
+			},
+		},
+	}
+
+	err := Validate(ws)
+	if err != nil {
+		t.Errorf("expected single zoomed pane to be valid, got: %v", err)
+	}
+}

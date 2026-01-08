@@ -44,6 +44,17 @@ func Validate(ws *Workspace) error {
 				errs = append(errs, fmt.Sprintf("session %q has duplicate window name: %q", sessionName, windowName))
 			}
 			seenWindows[windowName] = true
+
+			// Check zoom: only one pane per window can be zoomed
+			zoomedCount := 0
+			for _, pane := range window.Panes {
+				if pane.Zoom {
+					zoomedCount++
+				}
+			}
+			if zoomedCount > 1 {
+				errs = append(errs, fmt.Sprintf("window %q in session %q has %d panes with zoom=true (only one allowed per window)", windowName, sessionName, zoomedCount))
+			}
 		}
 	}
 

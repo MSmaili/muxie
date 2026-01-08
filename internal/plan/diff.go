@@ -31,4 +31,5 @@ type Window struct {
 type Pane struct {
 	Path    string
 	Command string
+	Zoom    bool
 }

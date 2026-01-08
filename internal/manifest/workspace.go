@@ -24,6 +24,7 @@ type Pane struct {
 	Command string `json:"command,omitempty" yaml:"command,omitempty"`
 	Split   string `json:"split,omitempty" yaml:"split,omitempty"`
 	Size    int    `json:"size,omitempty" yaml:"size,omitempty"`
+	Zoom    bool   `json:"zoom,omitempty" yaml:"zoom,omitempty"`
 }
 
 type WindowList []Window

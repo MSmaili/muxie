@@ -186,7 +186,7 @@ func manifestWindowToState(w manifest.Window, index int) *state.Window {
 	}
 	window := &state.Window{Name: name, Path: w.Path, Layout: w.Layout}
 	for _, p := range w.Panes {
-		window.Panes = append(window.Panes, &state.Pane{Path: p.Path, Command: p.Command})
+		window.Panes = append(window.Panes, &state.Pane{Path: p.Path, Command: p.Command, Zoom: p.Zoom})
 	}
 	return window
 }
@@ -274,7 +274,7 @@ func convertWindowDiff(wd state.ItemDiff[state.Window]) plan.ItemDiff[plan.Windo
 func stateWindowToPlan(w *state.Window) plan.Window {
 	pw := plan.Window{Name: w.Name, Path: w.Path, Layout: w.Layout}
 	for _, p := range w.Panes {
-		pw.Panes = append(pw.Panes, plan.Pane{Path: p.Path, Command: p.Command})
+		pw.Panes = append(pw.Panes, plan.Pane{Path: p.Path, Command: p.Command, Zoom: p.Zoom})
 	}
 	return pw
 }
@@ -301,6 +301,8 @@ func planActionToTmuxAction(a plan.Action) tmux.Action {
 		return tmux.SendKeys{Target: action.Target, Keys: action.Command}
 	case plan.SelectLayoutAction:
 		return tmux.SelectLayout{Target: action.Target, Layout: action.Layout}
+	case plan.ZoomPaneAction:
+		return tmux.ZoomPane{Target: action.Target}
 	case plan.KillSessionAction:
 		return tmux.KillSession{Name: action.Name}
 	case plan.KillWindowAction:

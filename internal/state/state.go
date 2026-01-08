@@ -21,6 +21,7 @@ type Pane struct {
 	Index   int
 	Path    string
 	Command string
+	Zoom    bool
 }
 
 func NewState() *State {

@@ -92,3 +92,11 @@ type SetEnvironment struct {
 func (a SetEnvironment) Args() []string {
 	return []string{"set-environment", "-t", a.Session, a.Name, a.Value}
 }
+
+type ZoomPane struct {
+	Target string
+}
+
+func (a ZoomPane) Args() []string {
+	return []string{"resize-pane", "-Z", "-t", a.Target}
+}
