@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/MSmaili/tms/internal/logger"
 	"github.com/MSmaili/tms/internal/manifest"
@@ -124,8 +125,10 @@ func executePlan(client tmux.Client, p *plan.Plan, workspace *manifest.Workspace
 
 func printDryRun(p *plan.Plan) {
 	logger.Info("Dry run - actions to execute:")
-	for _, action := range p.Actions {
-		logger.Plain("  %s", action.Comment())
+	tmuxActions := planActionsToTmuxActions(p.Actions)
+	for _, action := range tmuxActions {
+		args := action.Args()
+		logger.Plain("  tmux %s", strings.Join(args, " "))
 	}
 }
 

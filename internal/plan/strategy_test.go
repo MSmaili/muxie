@@ -129,21 +129,3 @@ func TestPlanValidate(t *testing.T) {
 		})
 	}
 }
-
-func TestPlanToScript(t *testing.T) {
-	tests := []struct {
-		name     string
-		actions  []Action
-		contains string
-	}{
-		{"session", []Action{CreateSessionAction{Name: "dev", Path: "~/code"}}, `new-session -d -s "dev" -c "~/code"`},
-		{"window", []Action{CreateWindowAction{Session: "dev", Name: "editor", Path: "~"}}, `new-window -t "dev" -n "editor" -c "~"`},
-		{"kill session", []Action{KillSessionAction{Name: "old"}}, `kill-session -t "old"`},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Contains(t, tt.actions[0].ToCommand(), tt.contains)
-		})
-	}
-}

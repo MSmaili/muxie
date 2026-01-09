@@ -6,7 +6,6 @@ import (
 )
 
 type Action interface {
-	ToCommand() string
 	Comment() string
 	Validate() error
 }
@@ -17,16 +16,6 @@ type CreateSessionAction struct {
 	Path       string
 }
 
-func (a CreateSessionAction) ToCommand() string {
-	cmd := fmt.Sprintf("new-session -d -s %q", a.Name)
-	if a.WindowName != "" {
-		cmd += fmt.Sprintf(" -n %q", a.WindowName)
-	}
-	if a.Path != "" {
-		cmd += fmt.Sprintf(" -c %q", a.Path)
-	}
-	return cmd
-}
 
 func (a CreateSessionAction) Comment() string {
 	return fmt.Sprintf("# Create session: %s", a.Name)
@@ -45,9 +34,6 @@ type CreateWindowAction struct {
 	Path    string
 }
 
-func (a CreateWindowAction) ToCommand() string {
-	return fmt.Sprintf("new-window -t %q -n %q -c %q", a.Session, a.Name, a.Path)
-}
 
 func (a CreateWindowAction) Comment() string {
 	return fmt.Sprintf("# Create window: %s:%s", a.Session, a.Name)
@@ -65,9 +51,6 @@ type SplitPaneAction struct {
 	Path   string
 }
 
-func (a SplitPaneAction) ToCommand() string {
-	return fmt.Sprintf("split-window -t %q -c %q", a.Target, a.Path)
-}
 
 func (a SplitPaneAction) Comment() string {
 	return fmt.Sprintf("# Split pane in: %s", a.Target)
@@ -85,9 +68,6 @@ type SendKeysAction struct {
 	Command string
 }
 
-func (a SendKeysAction) ToCommand() string {
-	return fmt.Sprintf("send-keys -t %q %q Enter", a.Target, a.Command)
-}
 
 func (a SendKeysAction) Comment() string {
 	return fmt.Sprintf("# Send command to: %s", a.Target)
@@ -104,9 +84,6 @@ type KillSessionAction struct {
 	Name string
 }
 
-func (a KillSessionAction) ToCommand() string {
-	return fmt.Sprintf("kill-session -t %q", a.Name)
-}
 
 func (a KillSessionAction) Comment() string {
 	return fmt.Sprintf("# Kill session: %s", a.Name)
@@ -123,9 +100,6 @@ type KillWindowAction struct {
 	Target string
 }
 
-func (a KillWindowAction) ToCommand() string {
-	return fmt.Sprintf("kill-window -t %q", a.Target)
-}
 
 func (a KillWindowAction) Comment() string {
 	return fmt.Sprintf("# Kill window: %s", a.Target)
@@ -144,9 +118,6 @@ type SelectLayoutAction struct {
 	Layout string
 }
 
-func (a SelectLayoutAction) ToCommand() string {
-	return fmt.Sprintf("select-layout -t %q %q", a.Target, a.Layout)
-}
 
 func (a SelectLayoutAction) Comment() string {
 	return fmt.Sprintf("# Set layout: %s -> %s", a.Target, a.Layout)
@@ -163,9 +134,6 @@ type ZoomPaneAction struct {
 	Target string
 }
 
-func (a ZoomPaneAction) ToCommand() string {
-	return fmt.Sprintf("resize-pane -Z -t %q", a.Target)
-}
 
 func (a ZoomPaneAction) Comment() string {
 	return fmt.Sprintf("# Zoom pane: %s", a.Target)
