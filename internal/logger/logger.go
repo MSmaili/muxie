@@ -15,6 +15,9 @@ var (
 	errorColor   = color.New(color.FgRed)
 	infoColor    = color.New(color.FgCyan)
 	warningColor = color.New(color.FgYellow)
+	debugColor   = color.New(color.FgHiBlack)
+
+	debugEnabled = os.Getenv("DEBUG") != ""
 )
 
 func Success(format string, args ...any) {
@@ -35,4 +38,10 @@ func Warning(format string, args ...any) {
 
 func Plain(format string, args ...any) {
 	fmt.Fprintf(output, format+"\n", args...)
+}
+
+func Debug(format string, args ...any) {
+	if debugEnabled {
+		debugColor.Fprintf(output, "[DEBUG] "+format+"\n", args...)
+	}
 }
