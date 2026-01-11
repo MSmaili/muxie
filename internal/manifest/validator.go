@@ -5,62 +5,106 @@ import (
 	"strings"
 )
 
-func Validate(ws *Workspace) error {
+type ValidationError struct {
+	Field   string
+	Message string
+}
+
+func ToError(errs []ValidationError) error {
+	if len(errs) == 0 {
+		return nil
+	}
+	messages := make([]string, len(errs))
+	for i, e := range errs {
+		if e.Field != "" {
+			messages[i] = fmt.Sprintf("%s: %s", e.Field, e.Message)
+		} else {
+			messages[i] = e.Message
+		}
+	}
+	return fmt.Errorf("workspace validation failed:\n  - %s", strings.Join(messages, "\n  - "))
+}
+
+func Validate(ws *Workspace) []ValidationError {
 	if ws == nil {
-		return fmt.Errorf("workspace is nil")
+		return []ValidationError{{Message: "workspace is nil"}}
 	}
 
 	if len(ws.Sessions) == 0 {
-		return fmt.Errorf("workspace has no sessions defined\nHint: Add at least one session to your workspace file")
+		return []ValidationError{{Message: "workspace has no sessions defined\nHint: Add at least one session to your workspace file"}}
 	}
 
-	var errs []string
-	seenSessions := make(map[string]bool)
+	errs := make([]ValidationError, 0, len(ws.Sessions))
+	seenSessions := make(map[string]bool, len(ws.Sessions))
 
 	for sessionName, windows := range ws.Sessions {
-		if strings.TrimSpace(sessionName) == "" {
-			errs = append(errs, "session name cannot be empty")
+		errs = validateSession(sessionName, windows, seenSessions, errs)
+	}
+
+	return errs
+}
+
+func validateSession(name string, windows WindowList, seen map[string]bool, errs []ValidationError) []ValidationError {
+	if strings.TrimSpace(name) == "" {
+		return append(errs, ValidationError{Message: "session name cannot be empty"})
+	}
+
+	if seen[name] {
+		return append(errs, ValidationError{
+			Field:   fmt.Sprintf("session.%s", name),
+			Message: "duplicate session name",
+		})
+	}
+	seen[name] = true
+
+	if len(windows) == 0 {
+		return append(errs, ValidationError{
+			Field:   fmt.Sprintf("session.%s", name),
+			Message: "has no windows defined",
+		})
+	}
+
+	return validateWindows(name, windows, errs)
+}
+
+func validateWindows(sessionName string, windows WindowList, errs []ValidationError) []ValidationError {
+	seenWindows := make(map[string]bool, len(windows))
+
+	for i, window := range windows {
+		windowName := window.Name
+		if windowName == "" {
+			windowName = fmt.Sprintf("window-%d", i)
+		}
+
+		if seenWindows[windowName] {
+			errs = append(errs, ValidationError{
+				Field:   fmt.Sprintf("session.%s.window.%s", sessionName, windowName),
+				Message: "duplicate window name",
+			})
 			continue
 		}
+		seenWindows[windowName] = true
 
-		if seenSessions[sessionName] {
-			errs = append(errs, fmt.Sprintf("duplicate session name: %q", sessionName))
+		if err := validateZoomedPanes(sessionName, windowName, window.Panes); err != nil {
+			errs = append(errs, *err)
 		}
-		seenSessions[sessionName] = true
+	}
 
-		if len(windows) == 0 {
-			errs = append(errs, fmt.Sprintf("session %q has no windows defined", sessionName))
-			continue
-		}
+	return errs
+}
 
-		seenWindows := make(map[string]bool)
-		for i, window := range windows {
-			windowName := window.Name
-			if windowName == "" {
-				windowName = fmt.Sprintf("window-%d", i)
-			}
-
-			if seenWindows[windowName] {
-				errs = append(errs, fmt.Sprintf("session %q has duplicate window name: %q", sessionName, windowName))
-			}
-			seenWindows[windowName] = true
-
-			// Check zoom: only one pane per window can be zoomed
-			zoomedCount := 0
-			for _, pane := range window.Panes {
-				if pane.Zoom {
-					zoomedCount++
+func validateZoomedPanes(sessionName, windowName string, panes []Pane) *ValidationError {
+	zoomedCount := 0
+	for _, pane := range panes {
+		if pane.Zoom {
+			zoomedCount++
+			if zoomedCount > 1 {
+				return &ValidationError{
+					Field:   fmt.Sprintf("session.%s.window.%s", sessionName, windowName),
+					Message: fmt.Sprintf("has %d panes with zoom=true (only one allowed per window)", zoomedCount),
 				}
 			}
-			if zoomedCount > 1 {
-				errs = append(errs, fmt.Sprintf("window %q in session %q has %d panes with zoom=true (only one allowed per window)", windowName, sessionName, zoomedCount))
-			}
 		}
 	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("workspace validation failed:\n  - %s", strings.Join(errs, "\n  - "))
-	}
-
 	return nil
 }

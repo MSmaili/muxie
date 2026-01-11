@@ -77,8 +77,8 @@ func loadWorkspaceFromArgs(args []string) (*manifest.Workspace, string, error) {
 		return nil, "", fmt.Errorf("loading workspace: %w", err)
 	}
 
-	if err := manifest.Validate(workspace); err != nil {
-		return nil, "", err
+	if errs := manifest.Validate(workspace); len(errs) > 0 {
+		return nil, "", manifest.ToError(errs)
 	}
 
 	return workspace, workspacePath, nil
