@@ -15,7 +15,7 @@ func TestLoadFromMemory(t *testing.T) {
 	tests := []struct {
 		name  string
 		input j
-		test  func(t *testing.T, cfg *Config, err error)
+		test  func(t *testing.T, cfg *Workspace, err error)
 	}{
 		{
 			name: "simple lazy paths should work",
@@ -24,7 +24,7 @@ func TestLoadFromMemory(t *testing.T) {
 					"work": []any{"~/project", "~/api"},
 				},
 			},
-			test: func(t *testing.T, cfg *Config, err error) {
+			test: func(t *testing.T, cfg *Workspace, err error) {
 				assert.Nil(t, err)
 				windows := cfg.Sessions["work"]
 				assert.Equal(t, len(windows), 2)
@@ -43,7 +43,7 @@ func TestLoadFromMemory(t *testing.T) {
 					},
 				},
 			},
-			test: func(t *testing.T, cfg *Config, err error) {
+			test: func(t *testing.T, cfg *Workspace, err error) {
 				assert.Nil(t, err)
 				w := cfg.Sessions["work"]
 
@@ -60,7 +60,7 @@ func TestLoadFromMemory(t *testing.T) {
 					},
 				},
 			},
-			test: func(t *testing.T, cfg *Config, err error) {
+			test: func(t *testing.T, cfg *Workspace, err error) {
 				if err == nil {
 					t.Fatalf("expected error but got nil")
 				}
@@ -69,7 +69,7 @@ func TestLoadFromMemory(t *testing.T) {
 		{
 			name:  "error: missing sessions",
 			input: j{},
-			test: func(t *testing.T, cfg *Config, err error) {
+			test: func(t *testing.T, cfg *Workspace, err error) {
 				if err == nil {
 					t.Fatalf("expected error but got nil")
 				}
@@ -90,7 +90,7 @@ func TestFileLoader(t *testing.T) {
 	tests := []struct {
 		name  string
 		input j
-		test  func(t *testing.T, cfg *Config, err error)
+		test  func(t *testing.T, cfg *Workspace, err error)
 	}{
 		{
 			name: "valid simple config",
@@ -99,7 +99,7 @@ func TestFileLoader(t *testing.T) {
 					"demo": []any{"~/foo"},
 				},
 			},
-			test: func(t *testing.T, cfg *Config, err error) {
+			test: func(t *testing.T, cfg *Workspace, err error) {
 				assert.Nil(t, err)
 				assert.Equal(t, "foo", cfg.Sessions["demo"][0].Name)
 			},
@@ -107,7 +107,7 @@ func TestFileLoader(t *testing.T) {
 		{
 			name:  "invalid json",
 			input: j{"sessions": 123},
-			test: func(t *testing.T, cfg *Config, err error) {
+			test: func(t *testing.T, cfg *Workspace, err error) {
 				if err == nil {
 					t.Fatalf("expected error")
 				}

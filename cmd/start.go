@@ -53,7 +53,7 @@ func Start(args []string) {
 	}
 }
 
-func createSessions(c *manifest.Config, tmx *tmux.TmuxClient, basePaneIndex int) (string, error) {
+func createSessions(c *manifest.Workspace, tmx *tmux.TmuxClient, basePaneIndex int) (string, error) {
 	var defaultSession string
 	for session, windows := range c.Sessions {
 		if len(defaultSession) == 0 {

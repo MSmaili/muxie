@@ -8,9 +8,10 @@ import (
 	"github.com/MSmaili/tmx/internal/domain"
 )
 
-type Config struct {
-	Sessions map[string]WindowList `json:"sessions"`
+type Workspace struct {
+	Sessions map[string]WindowList `json:"sessions" yaml:"sessions"`
 }
+
 type WindowList []domain.Window
 
 func (w *WindowList) UnmarshalJSON(data []byte) error {

@@ -27,14 +27,14 @@ func TestLoadYAML(t *testing.T) {
 	require.NoError(t, err)
 
 	loader := NewFileLoader(configPath)
-	config, err := loader.Load()
+	workspace, err := loader.Load()
 	require.NoError(t, err)
 
-	assert.NotNil(t, config)
-	assert.Len(t, config.Sessions, 1)
-	assert.Len(t, config.Sessions["myapp"], 2)
-	assert.Equal(t, "editor", config.Sessions["myapp"][0].Name)
-	assert.Equal(t, "/home/user/code", config.Sessions["myapp"][0].Path)
+	assert.NotNil(t, workspace)
+	assert.Len(t, workspace.Sessions, 1)
+	assert.Len(t, workspace.Sessions["myapp"], 2)
+	assert.Equal(t, "editor", workspace.Sessions["myapp"][0].Name)
+	assert.Equal(t, "/home/user/code", workspace.Sessions["myapp"][0].Path)
 }
 
 func TestLoadJSON(t *testing.T) {
@@ -57,13 +57,13 @@ func TestLoadJSON(t *testing.T) {
 	require.NoError(t, err)
 
 	loader := NewFileLoader(configPath)
-	config, err := loader.Load()
+	workspace, err := loader.Load()
 	require.NoError(t, err)
 
-	assert.NotNil(t, config)
-	assert.Len(t, config.Sessions, 1)
-	assert.Len(t, config.Sessions["myapp"], 1)
-	assert.Equal(t, "editor", config.Sessions["myapp"][0].Name)
+	assert.NotNil(t, workspace)
+	assert.Len(t, workspace.Sessions, 1)
+	assert.Len(t, workspace.Sessions["myapp"], 1)
+	assert.Equal(t, "editor", workspace.Sessions["myapp"][0].Name)
 }
 
 func TestLoadUnsupportedFormat(t *testing.T) {
@@ -107,12 +107,12 @@ func TestLoadYAMLWithPanes(t *testing.T) {
 	require.NoError(t, err)
 
 	loader := NewFileLoader(configPath)
-	config, err := loader.Load()
+	workspace, err := loader.Load()
 	require.NoError(t, err)
 
-	assert.NotNil(t, config)
-	assert.Len(t, config.Sessions["myapp"], 1)
-	assert.Len(t, config.Sessions["myapp"][0].Panes, 2)
-	assert.Equal(t, "vim", config.Sessions["myapp"][0].Panes[0].Command)
-	assert.Equal(t, "vertical", config.Sessions["myapp"][0].Panes[0].Split)
+	assert.NotNil(t, workspace)
+	assert.Len(t, workspace.Sessions["myapp"], 1)
+	assert.Len(t, workspace.Sessions["myapp"][0].Panes, 2)
+	assert.Equal(t, "vim", workspace.Sessions["myapp"][0].Panes[0].Command)
+	assert.Equal(t, "vertical", workspace.Sessions["myapp"][0].Panes[0].Split)
 }

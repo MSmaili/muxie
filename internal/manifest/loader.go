@@ -11,7 +11,7 @@ import (
 )
 
 type Loader interface {
-	Load() (*Config, error)
+	Load() (*Workspace, error)
 }
 
 type FileLoader struct {
@@ -22,14 +22,14 @@ func NewFileLoader(path string) *FileLoader {
 	return &FileLoader{Path: path}
 }
 
-func (l *FileLoader) Load() (*Config, error) {
+func (l *FileLoader) Load() (*Workspace, error) {
 	extendedPath := expandPath(l.Path)
 	data, err := os.ReadFile(extendedPath)
 	if err != nil {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
-	var raw Config
+	var raw Workspace
 	ext := filepath.Ext(extendedPath)
 	
 	switch ext {
@@ -57,7 +57,7 @@ func (l *FileLoader) Load() (*Config, error) {
 	return normalized, nil
 }
 
-func validate(cfg *Config) error {
+func validate(cfg *Workspace) error {
 	if cfg.Sessions == nil {
 		return fmt.Errorf("sessions block missing")
 	}
@@ -79,8 +79,8 @@ func validate(cfg *Config) error {
 	return nil
 }
 
-func normalize(cfg *Config) (*Config, error) {
-	out := &Config{Sessions: map[string]WindowList{}}
+func normalize(cfg *Workspace) (*Workspace, error) {
+	out := &Workspace{Sessions: map[string]WindowList{}}
 
 	for name, windows := range cfg.Sessions {
 		normalized := make(WindowList, len(windows))
@@ -107,8 +107,8 @@ func expandPath(p string) string {
 	return p
 }
 
-func loadFromMemory(data []byte) (*Config, error) {
-	var raw Config
+func loadFromMemory(data []byte) (*Workspace, error) {
+	var raw Workspace
 
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
