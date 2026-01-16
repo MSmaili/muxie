@@ -128,9 +128,7 @@ func (c *TmuxClient) CreateSession(name string, opts *domain.Window) error {
 }
 
 func (c *TmuxClient) CreateWindow(session string, name string, opts domain.Window) error {
-	target := fmt.Sprintf("%s:%d", session, opts.Index)
-
-	args := []string{"new-window", "-t", target, "-n", name, "-d"}
+	args := []string{"new-window", "-t", session, "-n", name, "-d"}
 
 	if opts.Path != "" {
 		args = append(args, "-c", opts.Path)
@@ -189,9 +187,28 @@ func (c *TmuxClient) BaseWindowIndex() (int, error) {
 	return idx, nil
 }
 
+func (c *TmuxClient) BasePaneIndex() (int, error) {
+	out, err := c.run("show-options", "-g", "pane-base-index")
+	if err != nil {
+		return 0, nil
+	}
+
+	parts := strings.Fields(out)
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("unexpected pane-base-index output: %s", out)
+	}
+
+	idx, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, err
+	}
+
+	return idx, nil
+}
+
 func (c *TmuxClient) SplitPane(session, window string, pane domain.Pane) error {
 	target := fmt.Sprintf("%s:%s", session, window)
-	args := []string{"split-window", "-t", target}
+	args := []string{"split-window", "-t", target, "-d"}
 
 	if pane.Split == "horizontal" {
 		args = append(args, "-v")
@@ -207,11 +224,13 @@ func (c *TmuxClient) SplitPane(session, window string, pane domain.Pane) error {
 		args = append(args, "-c", pane.Path)
 	}
 
-	if pane.Command != "" {
-		args = append(args, pane.Command)
-	}
-
 	_, err := c.run(args...)
+	return err
+}
+
+func (c *TmuxClient) SendKeys(session, window string, paneIndex int, keys string) error {
+	target := fmt.Sprintf("%s:%s.%d", session, window, paneIndex)
+	_, err := c.run("send-keys", "-t", target, keys, "C-m")
 	return err
 }
 
