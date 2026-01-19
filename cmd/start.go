@@ -48,7 +48,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	client, err := tmux.New()
 	if err != nil {
-		return fmt.Errorf("failed to connect to tmux: %w\nHint: Make sure tmux server is running", err)
+		return fmt.Errorf("failed to initialize tmux client: %w", err)
 	}
 
 	p, err := buildPlan(client, workspace)

@@ -59,6 +59,20 @@ func (c *client) ExecuteBatch(actions []Action) error {
 		return nil
 	}
 
+	err := c.executeSource(actions)
+	if err != nil && c.isServerNotRunning(err) {
+		if err := exec.Command(c.bin, actions[0].Args()...).Run(); err != nil {
+			return fmt.Errorf("failed to start tmux: %w", err)
+		}
+		if len(actions) > 1 {
+			return c.executeSource(actions[1:])
+		}
+		return nil
+	}
+	return err
+}
+
+func (c *client) executeSource(actions []Action) error {
 	var script strings.Builder
 	for _, action := range actions {
 		script.WriteString(quoteArgs(action.Args()))
@@ -74,8 +88,11 @@ func (c *client) ExecuteBatch(actions []Action) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("tmux source failed: %v\nstderr: %s\nscript:\n%s", err, stderr.String(), script.String())
 	}
-
 	return nil
+}
+
+func (c *client) isServerNotRunning(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "no server running")
 }
 
 func quoteArgs(args []string) string {
