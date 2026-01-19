@@ -20,6 +20,7 @@ const (
 var (
 	updateFromSource bool
 	updateDryRun     bool
+	updateVerbose    bool
 )
 
 var updateCmd = &cobra.Command{
@@ -32,20 +33,24 @@ func init() {
 	rootCmd.AddCommand(updateCmd)
 	updateCmd.Flags().BoolVar(&updateFromSource, "source", false, "Build from source instead of using release")
 	updateCmd.Flags().BoolVar(&updateDryRun, "dry-run", false, "Show what would be done without updating")
+	updateCmd.Flags().BoolVarP(&updateVerbose, "verbose", "v", false, "Show verbose output")
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
+	logger.SetVerbose(updateVerbose)
+
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to resolve executable path: %w", err)
 	}
+	logger.Debug("Executable path: %s", exePath)
 
 	updater, err := determineUpdater(exePath)
 	if err != nil {
 		return err
 	}
 
-	logger.Info("Detected installation method", "method", updater.Name())
+	logger.Verbose("Detected installation method: %s", updater.Name())
 
 	if updateDryRun {
 		updater.DryRun()
@@ -86,7 +91,7 @@ func (g *GoUpdater) DryRun() {
 		module = modulePathSource
 	}
 
-	logger.Info("Dry run", "command", "go install "+module)
+	logger.Info("Would run: go install %s", module)
 }
 
 func (g *GoUpdater) Update() error {
@@ -97,21 +102,35 @@ func (g *GoUpdater) Update() error {
 	module := modulePath
 	if updateFromSource {
 		module = modulePathSource
+		logger.Debug("Building from source: %s", module)
+	} else {
+		logger.Debug("Installing release: %s", module)
 	}
 
-	cmd := exec.Command("go", "install", module)
+	logger.Info("Updating muxie...")
+
+	args := []string{"install"}
+	if updateVerbose {
+		args = append(args, "-v")
+	}
+	args = append(args, module)
+
+	logger.Debug("Running command: go %s", strings.Join(args, " "))
+
+	cmd := exec.Command("go", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	logger.Info("Running", "command", strings.Join(cmd.Args, " "))
 	return cmd.Run()
 }
 
 func installedViaGo(exePath string) bool {
 	exeReal, err := filepath.EvalSymlinks(exePath)
 	if err != nil {
+		logger.Debug("Failed to resolve symlinks for %s: %v", exePath, err)
 		return false
 	}
+	logger.Debug("Resolved executable path: %s", exeReal)
 
 	for _, dir := range goBinDirs() {
 		dirReal, err := filepath.EvalSymlinks(dir)
@@ -119,7 +138,9 @@ func installedViaGo(exePath string) bool {
 			continue
 		}
 
+		logger.Debug("Checking Go bin directory: %s", dirReal)
 		if isWithinDir(exeReal, dirReal) {
+			logger.Debug("Executable is within Go bin directory")
 			return true
 		}
 	}
