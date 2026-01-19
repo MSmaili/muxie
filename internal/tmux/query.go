@@ -11,6 +11,15 @@ type Query[T any] interface {
 	Parse(output string) (T, error)
 }
 
+func RunQuery[T any](c Client, q Query[T]) (T, error) {
+	output, err := c.Run(q.Args()...)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return q.Parse(output)
+}
+
 type Session struct {
 	Name          string
 	WorkspacePath string

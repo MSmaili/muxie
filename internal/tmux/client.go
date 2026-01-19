@@ -15,15 +15,6 @@ type Client interface {
 	Attach(session string) error
 }
 
-func RunQuery[T any](c Client, q Query[T]) (T, error) {
-	output, err := c.Run(q.Args()...)
-	if err != nil {
-		var zero T
-		return zero, err
-	}
-	return q.Parse(output)
-}
-
 type client struct {
 	bin string
 }
