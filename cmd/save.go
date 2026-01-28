@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 
 	"github.com/MSmaili/muxie/internal/logger"
@@ -130,6 +131,14 @@ func saveWorkspace(client tmux.Client, sessions []tmux.Session, outputPath strin
 	}
 
 	workspace := convertToWorkspace(sessions)
+
+	if !saveAll {
+		loader := manifest.NewFileLoader(absPath)
+		if existing, err := loader.Load(); err == nil {
+			maps.Copy(existing.Sessions, workspace.Sessions)
+			workspace = existing
+		}
+	}
 
 	if err := manifest.Write(workspace, absPath); err != nil {
 		return fmt.Errorf("writing workspace: %w", err)
