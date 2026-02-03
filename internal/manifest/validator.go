@@ -37,37 +37,37 @@ func Validate(ws *Workspace) []ValidationError {
 	errs := make([]ValidationError, 0, len(ws.Sessions))
 	seenSessions := make(map[string]bool, len(ws.Sessions))
 
-	for sessionName, windows := range ws.Sessions {
-		errs = validateSession(sessionName, windows, seenSessions, errs)
+	for _, sess := range ws.Sessions {
+		errs = validateSession(sess, seenSessions, errs)
 	}
 
 	return errs
 }
 
-func validateSession(name string, windows WindowList, seen map[string]bool, errs []ValidationError) []ValidationError {
-	if strings.TrimSpace(name) == "" {
+func validateSession(sess Session, seen map[string]bool, errs []ValidationError) []ValidationError {
+	if strings.TrimSpace(sess.Name) == "" {
 		return append(errs, ValidationError{Message: "session name cannot be empty"})
 	}
 
-	if seen[name] {
+	if seen[sess.Name] {
 		return append(errs, ValidationError{
-			Field:   fmt.Sprintf("session.%s", name),
+			Field:   fmt.Sprintf("session.%s", sess.Name),
 			Message: "duplicate session name",
 		})
 	}
-	seen[name] = true
+	seen[sess.Name] = true
 
-	if len(windows) == 0 {
+	if len(sess.Windows) == 0 {
 		return append(errs, ValidationError{
-			Field:   fmt.Sprintf("session.%s", name),
+			Field:   fmt.Sprintf("session.%s", sess.Name),
 			Message: "has no windows defined",
 		})
 	}
 
-	return validateWindows(name, windows, errs)
+	return validateWindows(sess.Name, sess.Windows, errs)
 }
 
-func validateWindows(sessionName string, windows WindowList, errs []ValidationError) []ValidationError {
+func validateWindows(sessionName string, windows []Window, errs []ValidationError) []ValidationError {
 	seenWindows := make(map[string]bool, len(windows))
 
 	for i, window := range windows {

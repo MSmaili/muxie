@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"maps"
 	"path/filepath"
 
 	"github.com/MSmaili/muxie/internal/logger"
@@ -135,8 +134,7 @@ func saveWorkspace(client tmux.Client, sessions []tmux.Session, outputPath strin
 	if !saveAll {
 		loader := manifest.NewFileLoader(absPath)
 		if existing, err := loader.Load(); err == nil {
-			maps.Copy(existing.Sessions, workspace.Sessions)
-			workspace = existing
+			workspace = mergeWorkspaces(existing, workspace)
 		}
 	}
 
@@ -150,6 +148,22 @@ func saveWorkspace(client tmux.Client, sessions []tmux.Session, outputPath strin
 
 	logger.Success("Saved to %s", absPath)
 	return nil
+}
+
+func mergeWorkspaces(existing, new *manifest.Workspace) *manifest.Workspace {
+	seen := make(map[string]int, len(existing.Sessions))
+	for i, sess := range existing.Sessions {
+		seen[sess.Name] = i
+	}
+
+	for _, sess := range new.Sessions {
+		if idx, ok := seen[sess.Name]; ok {
+			existing.Sessions[idx] = sess
+		} else {
+			existing.Sessions = append(existing.Sessions, sess)
+		}
+	}
+	return existing
 }
 
 func updateSessionEnv(client tmux.Client, sessions []tmux.Session, path string) error {
@@ -166,11 +180,14 @@ func updateSessionEnv(client tmux.Client, sessions []tmux.Session, path string) 
 
 func convertToWorkspace(sessions []tmux.Session) *manifest.Workspace {
 	ws := &manifest.Workspace{
-		Sessions: make(map[string]manifest.WindowList, len(sessions)),
+		Sessions: make([]manifest.Session, len(sessions)),
 	}
 
-	for _, sess := range sessions {
-		ws.Sessions[sess.Name] = convertWindows(sess.Windows)
+	for i, sess := range sessions {
+		ws.Sessions[i] = manifest.Session{
+			Name:    sess.Name,
+			Windows: convertWindows(sess.Windows),
+		}
 	}
 
 	return ws

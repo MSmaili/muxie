@@ -204,13 +204,12 @@ func listTmuxSessions() error {
 }
 
 func workspaceToItems(name string, ws *manifest.Workspace) []listItem {
-	sessNames := sortedKeys(ws.Sessions)
-	items := make([]listItem, 0, len(sessNames))
+	items := make([]listItem, 0, len(ws.Sessions))
 
-	for _, sessName := range sessNames {
-		item := listItem{Name: name + ":" + sessName}
+	for _, sess := range ws.Sessions {
+		item := listItem{Name: name + ":" + sess.Name}
 		if listWindows {
-			for _, win := range ws.Sessions[sessName] {
+			for _, win := range sess.Windows {
 				lw := listWindow{Name: win.Name}
 				if listPanes {
 					paneCount := max(1, len(win.Panes))

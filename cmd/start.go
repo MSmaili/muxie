@@ -142,8 +142,8 @@ func executeActions(client tmux.Client, p *plan.Plan, workspace *manifest.Worksp
 	}
 
 	sessionNames := make([]string, 0, len(workspace.Sessions))
-	for name := range workspace.Sessions {
-		sessionNames = append(sessionNames, name)
+	for _, sess := range workspace.Sessions {
+		sessionNames = append(sessionNames, sess.Name)
 	}
 	actions = append(actions, buildSetEnvActions(sessionNames, absPath)...)
 
@@ -166,8 +166,8 @@ func buildSetEnvActions(sessionNames []string, path string) []tmux.Action {
 }
 
 func attachToSession(client tmux.Client, workspace *manifest.Workspace) error {
-	for sessionName := range workspace.Sessions {
-		return client.Attach(sessionName)
+	if len(workspace.Sessions) > 0 {
+		return client.Attach(workspace.Sessions[0].Name)
 	}
 	return nil
 }

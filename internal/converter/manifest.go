@@ -10,9 +10,9 @@ import (
 
 func ManifestToState(ws *manifest.Workspace) *state.State {
 	s := state.NewState()
-	for sessionName, windows := range ws.Sessions {
-		session := s.AddSession(sessionName)
-		for i, w := range windows {
+	for _, sess := range ws.Sessions {
+		session := s.AddSession(sess.Name)
+		for i, w := range sess.Windows {
 			session.Windows = append(session.Windows, manifestWindowToState(w, i))
 		}
 	}

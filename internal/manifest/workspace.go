@@ -1,18 +1,18 @@
 package manifest
 
-import (
-	"encoding/json"
-	"fmt"
-	"strings"
-)
-
 type Workspace struct {
-	Sessions map[string]WindowList `json:"sessions" yaml:"sessions"`
+	Sessions []Session `json:"sessions" yaml:"sessions"`
+}
+
+type Session struct {
+	Name    string   `json:"name" yaml:"name"`
+	Root    string   `json:"root,omitempty" yaml:"root,omitempty"`
+	Windows []Window `json:"windows" yaml:"windows"`
 }
 
 type Window struct {
-	Name    string `json:"name" yaml:"name"`
-	Path    string `json:"path" yaml:"path"`
+	Name    string `json:"name,omitempty" yaml:"name,omitempty"`
+	Path    string `json:"path,omitempty" yaml:"path,omitempty"`
 	Index   *int   `json:"index,omitempty" yaml:"index,omitempty"`
 	Layout  string `json:"layout,omitempty" yaml:"layout,omitempty"`
 	Command string `json:"command,omitempty" yaml:"command,omitempty"`
@@ -25,37 +25,4 @@ type Pane struct {
 	Split   string `json:"split,omitempty" yaml:"split,omitempty"`
 	Size    int    `json:"size,omitempty" yaml:"size,omitempty"`
 	Zoom    bool   `json:"zoom,omitempty" yaml:"zoom,omitempty"`
-}
-
-type WindowList []Window
-
-func (w *WindowList) UnmarshalJSON(data []byte) error {
-	var objForm []Window
-	if err := json.Unmarshal(data, &objForm); err == nil {
-		*w = objForm
-		return nil
-	}
-
-	var paths []string
-	if err := json.Unmarshal(data, &paths); err == nil {
-		windows := make([]Window, len(paths))
-		for i, p := range paths {
-			windows[i] = Window{
-				Path: p,
-				Name: inferNameFromPath(p),
-			}
-		}
-		*w = windows
-		return nil
-	}
-
-	return fmt.Errorf("invalid window list format: %s", string(data))
-}
-
-func inferNameFromPath(p string) string {
-	if p == "" {
-		return ""
-	}
-	parts := strings.Split(p, "/")
-	return parts[len(parts)-1]
 }
