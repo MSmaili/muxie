@@ -99,9 +99,21 @@ func quoteArgs(args []string) string {
 }
 
 func (c *client) Attach(session string) error {
+	if c.isInsideTmux() {
+		return c.switchClient(session)
+	}
 	cmd := exec.Command(c.bin, "attach-session", "-t", session)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func (c *client) isInsideTmux() bool {
+	return os.Getenv("TMUX") != ""
+}
+
+func (c *client) switchClient(session string) error {
+	cmd := exec.Command(c.bin, "switch-client", "-t", session)
 	return cmd.Run()
 }
