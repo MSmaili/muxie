@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/MSmaili/muxie/internal/logger"
 	"github.com/MSmaili/muxie/internal/manifest"
@@ -198,7 +200,7 @@ func convertWindows(windows []tmux.Window) []manifest.Window {
 	for i, w := range windows {
 		result[i] = manifest.Window{
 			Name: w.Name,
-			Path: w.Path,
+			Path: contractHomePath(w.Path),
 		}
 		if len(w.Panes) > 1 {
 			result[i].Panes = convertPanes(w.Panes)
@@ -207,10 +209,24 @@ func convertWindows(windows []tmux.Window) []manifest.Window {
 	return result
 }
 
+func contractHomePath(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if strings.HasPrefix(path, home+"/") {
+		return "~" + strings.TrimPrefix(path, home)
+	}
+	if path == home {
+		return "~"
+	}
+	return path
+}
+
 func convertPanes(panes []tmux.Pane) []manifest.Pane {
 	result := make([]manifest.Pane, len(panes))
 	for i, p := range panes {
-		result[i] = manifest.Pane{Path: p.Path}
+		result[i] = manifest.Pane{Path: contractHomePath(p.Path)}
 	}
 	return result
 }
