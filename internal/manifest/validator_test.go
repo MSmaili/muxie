@@ -72,7 +72,7 @@ func TestValidate(t *testing.T) {
 			wantErrCount:    1,
 		},
 		{
-			name: "duplicate window names",
+			name: "duplicate window names allowed",
 			workspace: &Workspace{
 				Sessions: []Session{
 					{
@@ -84,9 +84,7 @@ func TestValidate(t *testing.T) {
 					},
 				},
 			},
-			wantErr:         true,
-			wantErrContains: "duplicate window name",
-			wantErrCount:    1,
+			wantErr: false,
 		},
 		{
 			name: "duplicate session names",

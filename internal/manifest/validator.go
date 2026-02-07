@@ -68,22 +68,11 @@ func validateSession(sess Session, seen map[string]bool, errs []ValidationError)
 }
 
 func validateWindows(sessionName string, windows []Window, errs []ValidationError) []ValidationError {
-	seenWindows := make(map[string]bool, len(windows))
-
 	for i, window := range windows {
 		windowName := window.Name
 		if windowName == "" {
 			windowName = fmt.Sprintf("window-%d", i)
 		}
-
-		if seenWindows[windowName] {
-			errs = append(errs, ValidationError{
-				Field:   fmt.Sprintf("session.%s.window.%s", sessionName, windowName),
-				Message: "duplicate window name",
-			})
-			continue
-		}
-		seenWindows[windowName] = true
 
 		if err := validateZoomedPanes(sessionName, windowName, window.Panes); err != nil {
 			errs = append(errs, *err)
