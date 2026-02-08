@@ -11,4 +11,5 @@ type Backend interface {
 	Apply(actions []Action) error
 	DryRun(actions []Action) []string
 	Attach(session string) error
+	Switch(target string) error
 }

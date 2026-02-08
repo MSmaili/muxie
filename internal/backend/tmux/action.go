@@ -90,3 +90,19 @@ type ZoomPane struct {
 func (a ZoomPane) Args() []string {
 	return []string{"resize-pane", "-Z", "-t", a.Target}
 }
+
+type SwitchClient struct {
+	Target string
+}
+
+func (a SwitchClient) Args() []string {
+	return []string{"switch-client", "-t", a.Target}
+}
+
+type AttachSession struct {
+	Target string
+}
+
+func (a AttachSession) Args() []string {
+	return []string{"attach-session", "-t", a.Target}
+}

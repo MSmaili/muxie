@@ -12,7 +12,7 @@ func TestLoadStateQuery(t *testing.T) {
 	t.Run("args", func(t *testing.T) {
 		expected := []string{
 			"list-panes", "-a", "-F",
-			"#{session_id}|#{session_name}|#{window_name}|#{window_active}|#{pane_index}|#{pane_active}|#{pane_current_path}|#{pane_current_command}",
+			"#{session_id}|#{session_name}|#{window_name}|#{window_index}|#{window_active}|#{pane_index}|#{pane_active}|#{pane_current_path}|#{pane_current_command}",
 			";", "show-options", "-gv", "pane-base-index",
 		}
 		assert.Equal(t, expected, q.Args())
@@ -29,12 +29,13 @@ func TestLoadStateQuery(t *testing.T) {
 		{"empty", "", LoadStateResult{}},
 		{
 			name:   "single session single window single pane",
-			output: "$1|dev|editor|1|0|1|~/code|vim\n0",
+			output: "$1|dev|editor|0|1|0|1|~/code|vim\n0",
 			want: LoadStateResult{
 				Sessions: []Session{{
 					Name: "dev",
 					Windows: []Window{{
 						Name:  "editor",
+						Index: 0,
 						Path:  "~/code",
 						Panes: []Pane{{Path: "~/code", Command: "vim"}},
 					}},
@@ -44,12 +45,13 @@ func TestLoadStateQuery(t *testing.T) {
 		},
 		{
 			name:   "multiple panes same window",
-			output: "$1|dev|editor|1|0|0|~/code|vim\n$1|dev|editor|1|1|1|~/api|node\n1",
+			output: "$1|dev|editor|0|1|0|0|~/code|vim\n$1|dev|editor|0|1|1|1|~/api|node\n1",
 			want: LoadStateResult{
 				Sessions: []Session{{
 					Name: "dev",
 					Windows: []Window{{
 						Name:  "editor",
+						Index: 0,
 						Path:  "~/code",
 						Panes: []Pane{{Path: "~/code", Command: "vim"}, {Path: "~/api", Command: "node"}},
 					}},
@@ -59,13 +61,13 @@ func TestLoadStateQuery(t *testing.T) {
 		},
 		{
 			name:   "multiple windows",
-			output: "$1|dev|editor|0|0|0|~/code|vim\n$1|dev|server|1|0|1|~/api|node\n1",
+			output: "$1|dev|editor|0|0|0|0|~/code|vim\n$1|dev|server|1|1|0|1|~/api|node\n1",
 			want: LoadStateResult{
 				Sessions: []Session{{
 					Name: "dev",
 					Windows: []Window{
-						{Name: "editor", Path: "~/code", Panes: []Pane{{Path: "~/code", Command: "vim"}}},
-						{Name: "server", Path: "~/api", Panes: []Pane{{Path: "~/api", Command: "node"}}},
+						{Name: "editor", Index: 0, Path: "~/code", Panes: []Pane{{Path: "~/code", Command: "vim"}}},
+						{Name: "server", Index: 1, Path: "~/api", Panes: []Pane{{Path: "~/api", Command: "node"}}},
 					},
 				}},
 				PaneBaseIndex: 1,

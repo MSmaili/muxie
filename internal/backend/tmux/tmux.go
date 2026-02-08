@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/MSmaili/muxie/internal/backend"
@@ -90,7 +91,61 @@ func (b *TmuxBackend) DryRun(actions []backend.Action) []string {
 }
 
 func (b *TmuxBackend) Attach(session string) error {
-	return b.client.Attach(session)
+	return b.switchTo(session)
+}
+
+func (b *TmuxBackend) Switch(target string) error {
+	session, rest, hasWindow := strings.Cut(target, ":")
+	if !hasWindow {
+		return b.switchTo(target)
+	}
+
+	state, err := RunQuery(b.client, LoadStateQuery{})
+	if err != nil {
+		return err
+	}
+
+	window, paneStr, hasPane := strings.Cut(rest, ".")
+
+	winIndex, err := findWindowIndex(state.Sessions, session, window)
+	if err != nil {
+		return err
+	}
+
+	resolved := fmt.Sprintf("%s:%d", session, winIndex)
+	if hasPane {
+		var pane int
+		fmt.Sscanf(paneStr, "%d", &pane)
+		resolved = fmt.Sprintf("%s.%d", resolved, pane+state.PaneBaseIndex)
+	}
+
+	return b.switchTo(resolved)
+}
+
+func (b *TmuxBackend) switchTo(target string) error {
+	if isInsideTmux() {
+		return b.client.Execute(SwitchClient{Target: target})
+	}
+	return b.client.Execute(AttachSession{Target: target})
+}
+
+func isInsideTmux() bool {
+	return os.Getenv("TMUX") != ""
+}
+
+func findWindowIndex(sessions []Session, sessionName, windowName string) (int, error) {
+	for _, s := range sessions {
+		if s.Name != sessionName {
+			continue
+		}
+		for _, w := range s.Windows {
+			if w.Name == windowName {
+				return w.Index, nil
+			}
+		}
+		return 0, fmt.Errorf("window %q not found in session %q", windowName, sessionName)
+	}
+	return 0, fmt.Errorf("session %q not found", sessionName)
 }
 
 func (b *TmuxBackend) mapActions(actions []backend.Action) []Action {
