@@ -13,11 +13,12 @@ type Query[T any] interface {
 
 func RunQuery[T any](c Client, q Query[T]) (T, error) {
 	output, err := c.Run(q.Args()...)
-	if err != nil {
+	result, parseErr := q.Parse(output)
+	if parseErr != nil {
 		var zero T
-		return zero, err
+		return zero, parseErr
 	}
-	return q.Parse(output)
+	return result, err
 }
 
 type Session struct {
@@ -26,9 +27,10 @@ type Session struct {
 }
 
 type LoadStateResult struct {
-	Sessions      []Session
-	Active        ActiveContext
-	PaneBaseIndex int
+	Sessions        []Session
+	Active          ActiveContext
+	PaneBaseIndex   int
+	WindowBaseIndex int
 }
 
 type ActiveContext struct {
@@ -42,9 +44,11 @@ type LoadStateQuery struct{}
 
 func (q LoadStateQuery) Args() []string {
 	return []string{
-		"list-panes", "-a",
-		"-F", "#{session_id}|#{session_name}|#{window_name}|#{window_index}|#{window_active}|#{pane_index}|#{pane_active}|#{pane_current_path}|#{pane_current_command}",
+		"start-server",
+		";", "show-options", "-gv", "base-index",
 		";", "show-options", "-gv", "pane-base-index",
+		";", "list-panes", "-a",
+		"-F", "#{session_id}|#{session_name}|#{window_name}|#{window_index}|#{window_active}|#{pane_index}|#{pane_active}|#{pane_current_path}|#{pane_current_command}",
 	}
 }
 
@@ -57,17 +61,22 @@ func (q LoadStateQuery) Parse(output string) (LoadStateResult, error) {
 	builder := newStateBuilder()
 
 	lines := strings.Split(output, "\n")
-	for _, line := range lines {
+
+	var result LoadStateResult
+	if len(lines) >= 2 {
+		fmt.Sscanf(strings.TrimSpace(lines[0]), "%d", &result.WindowBaseIndex)
+		fmt.Sscanf(strings.TrimSpace(lines[1]), "%d", &result.PaneBaseIndex)
+	}
+
+	for _, line := range lines[2:] {
 		if p, ok := parsePaneLine(line); ok {
 			builder.addPane(p, currentID)
 		}
 	}
 
-	result := builder.result()
-	if len(lines) > 0 {
-		lastLine := strings.TrimSpace(lines[len(lines)-1])
-		fmt.Sscanf(lastLine, "%d", &result.PaneBaseIndex)
-	}
+	built := builder.result()
+	result.Sessions = built.Sessions
+	result.Active = built.Active
 
 	return result, nil
 }

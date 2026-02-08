@@ -28,7 +28,7 @@ type CreateWindow struct {
 }
 
 func (a CreateWindow) Args() []string {
-	args := []string{"new-window", "-t", a.Session, "-n", a.Name}
+	args := []string{"new-window", "-t", a.Session + ":", "-n", a.Name}
 	if a.Path != "" {
 		args = append(args, "-c", a.Path)
 	}

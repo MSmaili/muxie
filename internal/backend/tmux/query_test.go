@@ -11,14 +11,15 @@ func TestLoadStateQuery(t *testing.T) {
 
 	t.Run("args", func(t *testing.T) {
 		expected := []string{
-			"list-panes", "-a", "-F",
-			"#{session_id}|#{session_name}|#{window_name}|#{window_index}|#{window_active}|#{pane_index}|#{pane_active}|#{pane_current_path}|#{pane_current_command}",
+			"start-server",
+			";", "show-options", "-gv", "base-index",
 			";", "show-options", "-gv", "pane-base-index",
+			";", "list-panes", "-a", "-F",
+			"#{session_id}|#{session_name}|#{window_name}|#{window_index}|#{window_active}|#{pane_index}|#{pane_active}|#{pane_current_path}|#{pane_current_command}",
 		}
 		assert.Equal(t, expected, q.Args())
 	})
 
-	// Ensure tests don't depend on the real tmux environment
 	t.Setenv("TMUX", "")
 
 	tests := []struct {
@@ -29,7 +30,7 @@ func TestLoadStateQuery(t *testing.T) {
 		{"empty", "", LoadStateResult{}},
 		{
 			name:   "single session single window single pane",
-			output: "$1|dev|editor|0|1|0|1|~/code|vim\n0",
+			output: "0\n0\n$1|dev|editor|0|1|0|1|~/code|vim",
 			want: LoadStateResult{
 				Sessions: []Session{{
 					Name: "dev",
@@ -40,12 +41,11 @@ func TestLoadStateQuery(t *testing.T) {
 						Panes: []Pane{{Path: "~/code", Command: "vim"}},
 					}},
 				}},
-				PaneBaseIndex: 0,
 			},
 		},
 		{
 			name:   "multiple panes same window",
-			output: "$1|dev|editor|0|1|0|0|~/code|vim\n$1|dev|editor|0|1|1|1|~/api|node\n1",
+			output: "0\n1\n$1|dev|editor|0|1|0|0|~/code|vim\n$1|dev|editor|0|1|1|1|~/api|node",
 			want: LoadStateResult{
 				Sessions: []Session{{
 					Name: "dev",
@@ -61,7 +61,7 @@ func TestLoadStateQuery(t *testing.T) {
 		},
 		{
 			name:   "multiple windows",
-			output: "$1|dev|editor|0|0|0|0|~/code|vim\n$1|dev|server|1|1|0|1|~/api|node\n1",
+			output: "1\n1\n$1|dev|editor|0|0|0|0|~/code|vim\n$1|dev|server|1|1|0|1|~/api|node",
 			want: LoadStateResult{
 				Sessions: []Session{{
 					Name: "dev",
@@ -70,7 +70,8 @@ func TestLoadStateQuery(t *testing.T) {
 						{Name: "server", Index: 1, Path: "~/api", Panes: []Pane{{Path: "~/api", Command: "node"}}},
 					},
 				}},
-				PaneBaseIndex: 1,
+				WindowBaseIndex: 1,
+				PaneBaseIndex:   1,
 			},
 		},
 	}

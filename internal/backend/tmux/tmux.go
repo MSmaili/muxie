@@ -10,8 +10,9 @@ import (
 )
 
 type TmuxBackend struct {
-	client        Client
-	paneBaseIndex int
+	client          Client
+	paneBaseIndex   int
+	windowBaseIndex int
 }
 
 func init() {
@@ -34,11 +35,13 @@ func (b *TmuxBackend) Name() string {
 
 func (b *TmuxBackend) QueryState() (backend.StateResult, error) {
 	result, err := RunQuery(b.client, LoadStateQuery{})
+
+	b.paneBaseIndex = result.PaneBaseIndex
+	b.windowBaseIndex = result.WindowBaseIndex
+
 	if err != nil {
 		return backend.StateResult{}, err
 	}
-
-	b.paneBaseIndex = result.PaneBaseIndex
 
 	sessions := make([]backend.Session, len(result.Sessions))
 	for i, s := range result.Sessions {
@@ -150,28 +153,32 @@ func findWindowIndex(sessions []Session, sessionName, windowName string) (int, e
 
 func (b *TmuxBackend) mapActions(actions []backend.Action) []Action {
 	result := make([]Action, 0, len(actions))
+	windowIndex := make(map[string]int)
 	for _, a := range actions {
-		if ta := b.mapAction(a); ta != nil {
+		if ta := b.mapAction(a, windowIndex); ta != nil {
 			result = append(result, ta)
 		}
 	}
 	return result
 }
 
-func (b *TmuxBackend) mapAction(a backend.Action) Action {
+func (b *TmuxBackend) mapAction(a backend.Action, windowIndex map[string]int) Action {
+	base := b.windowBaseIndex
 	switch action := a.(type) {
 	case plan.CreateSessionAction:
+		windowIndex[action.Name] = base
 		return CreateSession{Name: action.Name, WindowName: action.WindowName, Path: action.Path}
 	case plan.CreateWindowAction:
+		windowIndex[action.Session]++
 		return CreateWindow{Session: action.Session, Name: action.Name, Path: action.Path}
 	case plan.SplitPaneAction:
-		return SplitPane{Target: fmt.Sprintf("%s:%s", action.Session, action.Window), Path: action.Path}
+		return SplitPane{Target: fmt.Sprintf("%s:%d", action.Session, windowIndex[action.Session]), Path: action.Path}
 	case plan.SendKeysAction:
-		return SendKeys{Target: fmt.Sprintf("%s:%s.%d", action.Session, action.Window, action.Pane+b.paneBaseIndex), Keys: action.Command}
+		return SendKeys{Target: fmt.Sprintf("%s:%d.%d", action.Session, windowIndex[action.Session], action.Pane+b.paneBaseIndex), Keys: action.Command}
 	case plan.SelectLayoutAction:
-		return SelectLayout{Target: fmt.Sprintf("%s:%s", action.Session, action.Window), Layout: action.Layout}
+		return SelectLayout{Target: fmt.Sprintf("%s:%d", action.Session, windowIndex[action.Session]), Layout: action.Layout}
 	case plan.ZoomPaneAction:
-		return ZoomPane{Target: fmt.Sprintf("%s:%s.%d", action.Session, action.Window, action.Pane+b.paneBaseIndex)}
+		return ZoomPane{Target: fmt.Sprintf("%s:%d.%d", action.Session, windowIndex[action.Session], action.Pane+b.paneBaseIndex)}
 	case plan.KillSessionAction:
 		return KillSession{Name: action.Name}
 	case plan.KillWindowAction:

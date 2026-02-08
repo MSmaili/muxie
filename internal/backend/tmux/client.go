@@ -32,11 +32,14 @@ func (c *client) Run(args ...string) (string, error) {
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
 
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("tmux %v failed: %v (%s)", args, err, stderr.String())
+	err := cmd.Run()
+	output := strings.TrimSpace(out.String())
+
+	if err != nil {
+		return output, fmt.Errorf("tmux %v failed: %v (%s)", args, err, stderr.String())
 	}
 
-	return strings.TrimSpace(out.String()), nil
+	return output, nil
 }
 
 func (c *client) Execute(action Action) error {
@@ -106,4 +109,3 @@ func quoteArgs(args []string) string {
 	}
 	return strings.Join(quoted, " ")
 }
-

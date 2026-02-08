@@ -25,7 +25,7 @@ func TestAction_Args(t *testing.T) {
 		{
 			name:   "create window",
 			action: CreateWindow{Session: "dev", Name: "editor", Path: "~/code"},
-			want:   []string{"new-window", "-t", "dev", "-n", "editor", "-c", "~/code"},
+			want:   []string{"new-window", "-t", "dev:", "-n", "editor", "-c", "~/code"},
 		},
 		{
 			name:   "split pane",
