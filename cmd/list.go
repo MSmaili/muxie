@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/MSmaili/muxie/internal/backend"
 	"github.com/MSmaili/muxie/internal/manifest"
-	"github.com/MSmaili/muxie/internal/tmux"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
@@ -90,7 +90,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	if mode == "sessions" {
-		return listTmuxSessions()
+		return listActiveSessions()
 	}
 	return listWorkspaceFiles()
 }
@@ -170,26 +170,26 @@ func listWorkspaceFiles() error {
 	return outputItems(items)
 }
 
-func listTmuxSessions() error {
-	client, err := tmux.New()
+func listActiveSessions() error {
+	b, err := backend.Detect()
 	if err != nil {
-		return fmt.Errorf("failed to connect to tmux: %w\nHint: Make sure tmux is running", err)
+		return fmt.Errorf("failed to detect backend: %w\nHint: Make sure a supported multiplexer is running", err)
 	}
 
-	result, err := tmux.RunQuery(client, tmux.LoadStateQuery{})
+	result, err := b.QueryState()
 	if err != nil {
-		return fmt.Errorf("failed to query tmux sessions: %w", err)
+		return fmt.Errorf("failed to query sessions: %w", err)
 	}
 
 	sessions := result.Sessions
 
 	if listCurrent {
 		if result.Active.Session == "" {
-			return fmt.Errorf("not in a tmux session")
+			return fmt.Errorf("not in a session")
 		}
 		for _, sess := range sessions {
 			if sess.Name == result.Active.Session {
-				sessions = []tmux.Session{sess}
+				sessions = []backend.Session{sess}
 				break
 			}
 		}
@@ -197,20 +197,19 @@ func listTmuxSessions() error {
 
 	items := make([]listItem, len(sessions))
 	for i, sess := range sessions {
-		items[i] = sessionToItem(sess, result.Active, result.PaneBaseIndex)
+		items[i] = sessionToItem(sess, result.Active)
 	}
 
 	return outputItems(items)
 }
 
 func workspaceToItems(name string, ws *manifest.Workspace) []listItem {
-	sessNames := sortedKeys(ws.Sessions)
-	items := make([]listItem, 0, len(sessNames))
+	items := make([]listItem, 0, len(ws.Sessions))
 
-	for _, sessName := range sessNames {
-		item := listItem{Name: name + ":" + sessName}
+	for _, sess := range ws.Sessions {
+		item := listItem{Name: name + ":" + sess.Name}
 		if listWindows {
-			for _, win := range ws.Sessions[sessName] {
+			for _, win := range sess.Windows {
 				lw := listWindow{Name: win.Name}
 				if listPanes {
 					paneCount := max(1, len(win.Panes))
@@ -226,7 +225,7 @@ func workspaceToItems(name string, ws *manifest.Workspace) []listItem {
 	return items
 }
 
-func sessionToItem(sess tmux.Session, active tmux.ActiveContext, paneBaseIndex int) listItem {
+func sessionToItem(sess backend.Session, active backend.ActiveContext) listItem {
 	item := listItem{Name: applyMarker(sess.Name, sess.Name == active.Session && !listWindows)}
 
 	if listWindows {
@@ -241,9 +240,8 @@ func sessionToItem(sess tmux.Session, active tmux.ActiveContext, paneBaseIndex i
 				if isActiveWindow {
 					lw.ActivePane = active.Pane
 				}
-				for i := range len(win.Panes) {
-					paneIndex := paneBaseIndex + i
-					lw.Panes = append(lw.Panes, paneIndex)
+				for _, p := range win.Panes {
+					lw.Panes = append(lw.Panes, p.Index)
 				}
 			}
 			item.Windows = append(item.Windows, lw)

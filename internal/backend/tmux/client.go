@@ -9,10 +9,9 @@ import (
 )
 
 type Client interface {
+	Run(args ...string) (string, error)
 	Execute(action Action) error
 	ExecuteBatch(actions []Action) error
-	Run(args ...string) (string, error)
-	Attach(session string) error
 }
 
 type client struct {
@@ -41,8 +40,18 @@ func (c *client) Run(args ...string) (string, error) {
 }
 
 func (c *client) Execute(action Action) error {
-	_, err := c.Run(action.Args()...)
-	return err
+	cmd := exec.Command(c.bin, action.Args()...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if s := strings.TrimSpace(stderr.String()); s != "" {
+			return fmt.Errorf("%s", s)
+		}
+		return err
+	}
+	return nil
 }
 
 func (c *client) ExecuteBatch(actions []Action) error {
@@ -98,10 +107,3 @@ func quoteArgs(args []string) string {
 	return strings.Join(quoted, " ")
 }
 
-func (c *client) Attach(session string) error {
-	cmd := exec.Command(c.bin, "attach-session", "-t", session)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}

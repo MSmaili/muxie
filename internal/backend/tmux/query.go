@@ -21,9 +21,8 @@ func RunQuery[T any](c Client, q Query[T]) (T, error) {
 }
 
 type Session struct {
-	Name          string
-	WorkspacePath string
-	Windows       []Window
+	Name    string
+	Windows []Window
 }
 
 type LoadStateResult struct {
@@ -44,7 +43,7 @@ type LoadStateQuery struct{}
 func (q LoadStateQuery) Args() []string {
 	return []string{
 		"list-panes", "-a",
-		"-F", "#{session_id}|#{session_name}|#{window_name}|#{window_active}|#{pane_index}|#{pane_active}|#{pane_current_path}|#{pane_current_command}|#{MUXIE_WORKSPACE_PATH}",
+		"-F", "#{session_id}|#{session_name}|#{window_name}|#{window_index}|#{window_active}|#{pane_index}|#{pane_active}|#{pane_current_path}|#{pane_current_command}",
 		";", "show-options", "-gv", "pane-base-index",
 	}
 }
@@ -74,11 +73,12 @@ func (q LoadStateQuery) Parse(output string) (LoadStateResult, error) {
 }
 
 type paneLine struct {
-	sessionID, sessionName, windowName  string
-	windowActive                        bool
-	paneIndex                           int
-	paneActive                          bool
-	panePath, paneCmd, workspaceEnvPath string
+	sessionID, sessionName, windowName string
+	windowIndex                        int
+	windowActive                       bool
+	paneIndex                          int
+	paneActive                         bool
+	panePath, paneCmd                  string
 }
 
 func parsePaneLine(line string) (paneLine, bool) {
@@ -89,7 +89,7 @@ func parsePaneLine(line string) (paneLine, bool) {
 
 	var p paneLine
 	var ok bool
-	var windowActiveStr, paneIndexStr, paneActiveStr string
+	var windowIndexStr, windowActiveStr, paneIndexStr, paneActiveStr string
 
 	if p.sessionID, line, ok = strings.Cut(line, "|"); !ok {
 		return paneLine{}, false
@@ -100,6 +100,10 @@ func parsePaneLine(line string) (paneLine, bool) {
 	if p.windowName, line, ok = strings.Cut(line, "|"); !ok {
 		return paneLine{}, false
 	}
+	if windowIndexStr, line, ok = strings.Cut(line, "|"); !ok {
+		return paneLine{}, false
+	}
+	fmt.Sscanf(windowIndexStr, "%d", &p.windowIndex)
 	if windowActiveStr, line, ok = strings.Cut(line, "|"); !ok {
 		return paneLine{}, false
 	}
@@ -118,7 +122,7 @@ func parsePaneLine(line string) (paneLine, bool) {
 	if p.panePath, line, ok = strings.Cut(line, "|"); !ok {
 		return paneLine{}, false
 	}
-	p.paneCmd, p.workspaceEnvPath, _ = strings.Cut(line, "|")
+	p.paneCmd = line
 	return p, true
 }
 
@@ -143,27 +147,27 @@ func (b *stateBuilder) addPane(p paneLine, currentID string) {
 		}
 	}
 
-	sess := b.getOrCreateSession(p.sessionName, p.workspaceEnvPath)
-	win := b.getOrCreateWindow(sess, p.windowName, p.panePath)
+	sess := b.getOrCreateSession(p.sessionName)
+	win := b.getOrCreateWindow(sess, p.windowName, p.windowIndex, p.panePath)
 	win.Panes = append(win.Panes, Pane{Path: p.panePath, Command: p.paneCmd})
 }
 
-func (b *stateBuilder) getOrCreateSession(name, workspacePath string) *Session {
+func (b *stateBuilder) getOrCreateSession(name string) *Session {
 	if sess, ok := b.sessions[name]; ok {
 		return sess
 	}
-	sess := &Session{Name: name, WorkspacePath: workspacePath}
+	sess := &Session{Name: name}
 	b.sessions[name] = sess
 	return sess
 }
 
-func (b *stateBuilder) getOrCreateWindow(sess *Session, name, path string) *Window {
+func (b *stateBuilder) getOrCreateWindow(sess *Session, name string, index int, path string) *Window {
 	for i := range sess.Windows {
-		if sess.Windows[i].Name == name {
+		if sess.Windows[i].Index == index {
 			return &sess.Windows[i]
 		}
 	}
-	sess.Windows = append(sess.Windows, Window{Name: name, Path: path})
+	sess.Windows = append(sess.Windows, Window{Name: name, Index: index, Path: path})
 	return &sess.Windows[len(sess.Windows)-1]
 }
 

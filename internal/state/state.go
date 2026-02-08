@@ -1,8 +1,7 @@
 package state
 
 type State struct {
-	Sessions      map[string]*Session
-	PaneBaseIndex int
+	Sessions map[string]*Session
 }
 
 type Session struct {

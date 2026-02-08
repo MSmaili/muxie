@@ -18,61 +18,65 @@ func TestLoadFromMemory(t *testing.T) {
 		test  func(t *testing.T, cfg *Workspace, err error)
 	}{
 		{
-			name: "simple lazy paths should work",
+			name: "simple session with windows",
 			input: j{
-				"sessions": j{
-					"work": []any{"~/project", "~/api"},
-				},
-			},
-			test: func(t *testing.T, cfg *Workspace, err error) {
-				assert.Nil(t, err)
-				windows := cfg.Sessions["work"]
-				assert.Equal(t, len(windows), 2)
-				assert.Equal(t, windows[0].Name, "project")
-				assert.Equal(t, windows[0].Name, "project")
-				assert.Nil(t, windows[0].Index)
-			},
-		},
-		{
-			name: "advanced windows",
-			input: j{
-				"sessions": j{
-					"work": []any{
-						j{"name": "api", "path": "~/api"},
-						j{"path": "~/project"},
+				"sessions": []any{
+					j{
+						"name": "work",
+						"windows": []any{
+							j{"name": "api", "path": "~/api"},
+							j{"name": "project", "path": "~/project"},
+						},
 					},
 				},
 			},
 			test: func(t *testing.T, cfg *Workspace, err error) {
 				assert.Nil(t, err)
-				w := cfg.Sessions["work"]
-
-				assert.Equal(t, w[0].Name, "api")
-				assert.Equal(t, w[1].Name, "project")
+				assert.Equal(t, 1, len(cfg.Sessions))
+				assert.Equal(t, "work", cfg.Sessions[0].Name)
+				assert.Equal(t, 2, len(cfg.Sessions[0].Windows))
+				assert.Equal(t, "api", cfg.Sessions[0].Windows[0].Name)
 			},
 		},
 		{
-			name: "error: missing path",
+			name: "session with root inherits to windows",
 			input: j{
-				"sessions": j{
-					"work": []any{
-						j{"name": "x"},
+				"sessions": []any{
+					j{
+						"name": "work",
+						"root": "~/projects",
+						"windows": []any{
+							j{"name": "editor"},
+						},
 					},
 				},
 			},
 			test: func(t *testing.T, cfg *Workspace, err error) {
-				if err == nil {
-					t.Fatalf("expected error but got nil")
-				}
+				assert.Nil(t, err)
+				assert.Contains(t, cfg.Sessions[0].Windows[0].Path, "projects")
+			},
+		},
+		{
+			name: "error: missing path and no root",
+			input: j{
+				"sessions": []any{
+					j{
+						"name": "work",
+						"windows": []any{
+							j{"name": "x"},
+						},
+					},
+				},
+			},
+			test: func(t *testing.T, cfg *Workspace, err error) {
+				assert.NotNil(t, err)
 			},
 		},
 		{
 			name:  "error: missing sessions",
 			input: j{},
 			test: func(t *testing.T, cfg *Workspace, err error) {
-				if err == nil {
-					t.Fatalf("expected error but got nil")
-				}
+				assert.NotNil(t, err)
 			},
 		},
 	}
@@ -95,22 +99,25 @@ func TestFileLoader(t *testing.T) {
 		{
 			name: "valid simple config",
 			input: j{
-				"sessions": j{
-					"demo": []any{"~/foo"},
+				"sessions": []any{
+					j{
+						"name": "demo",
+						"windows": []any{
+							j{"path": "~/foo"},
+						},
+					},
 				},
 			},
 			test: func(t *testing.T, cfg *Workspace, err error) {
 				assert.Nil(t, err)
-				assert.Equal(t, "foo", cfg.Sessions["demo"][0].Name)
+				assert.Equal(t, "foo", cfg.Sessions[0].Windows[0].Name)
 			},
 		},
 		{
 			name:  "invalid json",
 			input: j{"sessions": 123},
 			test: func(t *testing.T, cfg *Workspace, err error) {
-				if err == nil {
-					t.Fatalf("expected error")
-				}
+				assert.NotNil(t, err)
 			},
 		},
 	}
@@ -122,7 +129,6 @@ func TestFileLoader(t *testing.T) {
 			b, _ := json.Marshal(tt.input)
 
 			err := os.WriteFile(path, []byte(b), 0644)
-
 			if err != nil {
 				t.Fatalf("Error on writing on temp file")
 			}

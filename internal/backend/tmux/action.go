@@ -83,20 +83,26 @@ func (a SelectLayout) Args() []string {
 	return []string{"select-layout", "-t", a.Target, a.Layout}
 }
 
-type SetEnvironment struct {
-	Session string
-	Name    string
-	Value   string
-}
-
-func (a SetEnvironment) Args() []string {
-	return []string{"set-environment", "-t", a.Session, a.Name, a.Value}
-}
-
 type ZoomPane struct {
 	Target string
 }
 
 func (a ZoomPane) Args() []string {
 	return []string{"resize-pane", "-Z", "-t", a.Target}
+}
+
+type SwitchClient struct {
+	Target string
+}
+
+func (a SwitchClient) Args() []string {
+	return []string{"switch-client", "-t", a.Target}
+}
+
+type AttachSession struct {
+	Target string
+}
+
+func (a AttachSession) Args() []string {
+	return []string{"attach-session", "-t", a.Target}
 }

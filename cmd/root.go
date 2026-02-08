@@ -15,8 +15,10 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "muxie",
-	Short: "muxie - Tmux Session Manager",
+	Use:          "muxie",
+	Short:        "muxie - Tmux Session Manager",
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	Long: `muxie is a powerful tmux session manager that helps you manage complex tmux sessions with ease.
 
 It supports:

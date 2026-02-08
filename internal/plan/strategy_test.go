@@ -80,7 +80,7 @@ func TestForceStrategyPlan(t *testing.T) {
 				Sessions: ItemDiff[Session]{},
 				Windows:  map[string]ItemDiff[Window]{"dev": {Extra: []Window{{Name: "unused"}}}},
 			},
-			want: []Action{KillWindowAction{Target: "dev:unused"}},
+			want: []Action{KillWindowAction{Session: "dev", Window: "unused"}},
 		},
 		{
 			name: "recreates mismatched",
@@ -91,7 +91,7 @@ func TestForceStrategyPlan(t *testing.T) {
 				},
 			},
 			want: []Action{
-				KillWindowAction{Target: "dev:editor"},
+				KillWindowAction{Session: "dev", Window: "editor"},
 				CreateWindowAction{Session: "dev", Name: "editor", Path: "~/new"},
 			},
 		},

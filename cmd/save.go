@@ -2,12 +2,13 @@ package cmd
 
 import (
 	"fmt"
-	"maps"
+	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/MSmaili/muxie/internal/backend"
 	"github.com/MSmaili/muxie/internal/logger"
 	"github.com/MSmaili/muxie/internal/manifest"
-	"github.com/MSmaili/muxie/internal/tmux"
 	"github.com/spf13/cobra"
 )
 
@@ -42,22 +43,22 @@ func runSave(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := tmux.New()
+	b, err := backend.Detect()
 	if err != nil {
-		return fmt.Errorf("failed to connect to tmux: %w\nHint: Make sure tmux is running", err)
+		return fmt.Errorf("failed to detect backend: %w\nHint: Make sure a supported multiplexer is running", err)
 	}
 
-	sessions, existingPath, err := getTargetSessions(client)
-	if err != nil {
-		return err
-	}
-
-	outputPath, err := determineSavePath(args, existingPath)
+	sessions, err := getTargetSessions(b)
 	if err != nil {
 		return err
 	}
 
-	return saveWorkspace(client, sessions, outputPath)
+	outputPath, err := determineSavePath(args)
+	if err != nil {
+		return err
+	}
+
+	return saveWorkspace(sessions, outputPath)
 }
 
 func validateSaveFlags() error {
@@ -67,38 +68,38 @@ func validateSaveFlags() error {
 	return nil
 }
 
-func getTargetSessions(client tmux.Client) ([]tmux.Session, string, error) {
-	result, err := tmux.RunQuery(client, tmux.LoadStateQuery{})
+func getTargetSessions(b backend.Backend) ([]backend.Session, error) {
+	result, err := b.QueryState()
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to query tmux sessions: %w", err)
+		return nil, fmt.Errorf("failed to query sessions: %w", err)
 	}
 
 	if len(result.Sessions) == 0 {
-		return nil, "", fmt.Errorf("no tmux sessions found\nHint: Create a session first with 'tmux new -s <name>'")
+		return nil, fmt.Errorf("no sessions found\nHint: Create a session first")
 	}
 
 	if saveAll {
-		return result.Sessions, "", nil
+		return result.Sessions, nil
 	}
 
 	return findCurrentSession(result)
 }
 
-func findCurrentSession(result tmux.LoadStateResult) ([]tmux.Session, string, error) {
+func findCurrentSession(result backend.StateResult) ([]backend.Session, error) {
 	if result.Active.Session == "" {
-		return nil, "", fmt.Errorf("not in a tmux session\nHint: Run this command from inside tmux, or use --all with -p/-n/.")
+		return nil, fmt.Errorf("not in a session\nHint: Run this command from inside a multiplexer session, or use --all with -p/-n/.")
 	}
 
 	for _, s := range result.Sessions {
 		if s.Name == result.Active.Session {
-			return []tmux.Session{s}, s.WorkspacePath, nil
+			return []backend.Session{s}, nil
 		}
 	}
 
-	return nil, "", fmt.Errorf("session %q not found", result.Active.Session)
+	return nil, fmt.Errorf("session %q not found", result.Active.Session)
 }
 
-func determineSavePath(args []string, existingPath string) (string, error) {
+func determineSavePath(args []string) (string, error) {
 	if savePath != "" {
 		return savePath, nil
 	}
@@ -117,14 +118,10 @@ func determineSavePath(args []string, existingPath string) (string, error) {
 		return "", fmt.Errorf("--all requires a destination\nUse: muxie save --all -p <path>, muxie save --all -n <name>, or muxie save --all .")
 	}
 
-	if existingPath != "" {
-		return existingPath, nil
-	}
-
-	return "", fmt.Errorf("no workspace path found\nHint: This session wasn't started by muxie. Use -p <path>, -n <name>, or . to specify where to save")
+	return "", fmt.Errorf("no save target specified\nHint: Use -p <path>, -n <name>, or . to specify where to save")
 }
 
-func saveWorkspace(client tmux.Client, sessions []tmux.Session, outputPath string) error {
+func saveWorkspace(sessions []backend.Session, outputPath string) error {
 	absPath, err := filepath.Abs(outputPath)
 	if err != nil {
 		return fmt.Errorf("resolving absolute path: %w", err)
@@ -135,8 +132,7 @@ func saveWorkspace(client tmux.Client, sessions []tmux.Session, outputPath strin
 	if !saveAll {
 		loader := manifest.NewFileLoader(absPath)
 		if existing, err := loader.Load(); err == nil {
-			maps.Copy(existing.Sessions, workspace.Sessions)
-			workspace = existing
+			workspace = mergeWorkspaces(existing, workspace)
 		}
 	}
 
@@ -144,44 +140,47 @@ func saveWorkspace(client tmux.Client, sessions []tmux.Session, outputPath strin
 		return fmt.Errorf("writing workspace: %w", err)
 	}
 
-	if err := updateSessionEnv(client, sessions, absPath); err != nil {
-		return err
-	}
-
 	logger.Success("Saved to %s", absPath)
 	return nil
 }
 
-func updateSessionEnv(client tmux.Client, sessions []tmux.Session, path string) error {
-	names := make([]string, len(sessions))
-	for i, s := range sessions {
-		names[i] = s.Name
+func mergeWorkspaces(existing, new *manifest.Workspace) *manifest.Workspace {
+	seen := make(map[string]int, len(existing.Sessions))
+	for i, sess := range existing.Sessions {
+		seen[sess.Name] = i
 	}
 
-	if err := client.ExecuteBatch(buildSetEnvActions(names, path)); err != nil {
-		return fmt.Errorf("updating environment: %w", err)
+	for _, sess := range new.Sessions {
+		if idx, ok := seen[sess.Name]; ok {
+			existing.Sessions[idx] = sess
+		} else {
+			existing.Sessions = append(existing.Sessions, sess)
+		}
 	}
-	return nil
+	return existing
 }
 
-func convertToWorkspace(sessions []tmux.Session) *manifest.Workspace {
+func convertToWorkspace(sessions []backend.Session) *manifest.Workspace {
 	ws := &manifest.Workspace{
-		Sessions: make(map[string]manifest.WindowList, len(sessions)),
+		Sessions: make([]manifest.Session, len(sessions)),
 	}
 
-	for _, sess := range sessions {
-		ws.Sessions[sess.Name] = convertWindows(sess.Windows)
+	for i, sess := range sessions {
+		ws.Sessions[i] = manifest.Session{
+			Name:    sess.Name,
+			Windows: convertWindows(sess.Windows),
+		}
 	}
 
 	return ws
 }
 
-func convertWindows(windows []tmux.Window) []manifest.Window {
+func convertWindows(windows []backend.Window) []manifest.Window {
 	result := make([]manifest.Window, len(windows))
 	for i, w := range windows {
 		result[i] = manifest.Window{
 			Name: w.Name,
-			Path: w.Path,
+			Path: contractHomePath(w.Path),
 		}
 		if len(w.Panes) > 1 {
 			result[i].Panes = convertPanes(w.Panes)
@@ -190,10 +189,24 @@ func convertWindows(windows []tmux.Window) []manifest.Window {
 	return result
 }
 
-func convertPanes(panes []tmux.Pane) []manifest.Pane {
+func contractHomePath(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if strings.HasPrefix(path, home+"/") {
+		return "~" + strings.TrimPrefix(path, home)
+	}
+	if path == home {
+		return "~"
+	}
+	return path
+}
+
+func convertPanes(panes []backend.Pane) []manifest.Pane {
 	result := make([]manifest.Pane, len(panes))
 	for i, p := range panes {
-		result[i] = manifest.Pane{Path: p.Path}
+		result[i] = manifest.Pane{Path: contractHomePath(p.Path)}
 	}
 	return result
 }

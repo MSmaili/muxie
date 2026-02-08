@@ -12,7 +12,6 @@ type MockClient struct {
 	RunFunc          func(args ...string) (string, error)
 	ExecuteFunc      func(action Action) error
 	ExecuteBatchFunc func(actions []Action) error
-	AttachFunc       func(session string) error
 }
 
 func (m *MockClient) Run(args ...string) (string, error) {
@@ -36,14 +35,9 @@ func (m *MockClient) ExecuteBatch(actions []Action) error {
 	return nil
 }
 
-func (m *MockClient) Attach(session string) error {
-	if m.AttachFunc != nil {
-		return m.AttachFunc(session)
-	}
-	return nil
-}
-
 func TestRunQuery(t *testing.T) {
+	t.Setenv("TMUX", "")
+
 	tests := []struct {
 		name    string
 		output  string
@@ -53,9 +47,9 @@ func TestRunQuery(t *testing.T) {
 	}{
 		{
 			name:   "success",
-			output: "$1|dev|editor|1|0|1|~/code|vim|\n0",
+			output: "$1|dev|editor|0|1|0|1|~/code|vim\n0",
 			want: LoadStateResult{
-				Sessions:      []Session{{Name: "dev", Windows: []Window{{Name: "editor", Path: "~/code", Panes: []Pane{{Path: "~/code", Command: "vim"}}}}}},
+				Sessions:      []Session{{Name: "dev", Windows: []Window{{Name: "editor", Index: 0, Path: "~/code", Panes: []Pane{{Path: "~/code", Command: "vim"}}}}}},
 				PaneBaseIndex: 0,
 			},
 		},
