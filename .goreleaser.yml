@@ -24,17 +24,29 @@ builds:
 
 archives:
   - id: hetki
-    format: tar.gz
+    format: binary
     name_template: >-
       {{ .ProjectName }}-
       {{- .Os }}-
       {{- .Arch }}
-    files:
-      - README.md
 
 checksum:
   name_template: 'checksums.txt'
   algorithm: sha256
+
+# Sign the checksums file with GPG (optional, requires GPG key)
+# Uncomment the following to enable GPG signing:
+# signs:
+#   - artifacts: checksum
+#     cmd: gpg
+#     args:
+#       - --batch
+#       - --local-user
+#       - "{{ .Env.GPG_FINGERPRINT }}"
+#       - --output
+#       - "${signature}"
+#       - --detach-sign
+#       - "${artifact}"
 
 changelog:
   sort: asc
