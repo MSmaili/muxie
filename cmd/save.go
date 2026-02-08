@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/MSmaili/muxie/internal/backend"
-	"github.com/MSmaili/muxie/internal/logger"
-	"github.com/MSmaili/muxie/internal/manifest"
+	"github.com/MSmaili/hetki/internal/backend"
+	"github.com/MSmaili/hetki/internal/logger"
+	"github.com/MSmaili/hetki/internal/manifest"
 	"github.com/spf13/cobra"
 )
 
@@ -63,7 +63,7 @@ func runSave(cmd *cobra.Command, args []string) error {
 
 func validateSaveFlags() error {
 	if savePath != "" && saveName != "" {
-		return fmt.Errorf("cannot use both -p and -n flags\nUse either: muxie save -p <path> OR muxie save -n <name>")
+		return fmt.Errorf("cannot use both -p and -n flags\nUse either: hetki save -p <path> OR hetki save -n <name>")
 	}
 	return nil
 }
@@ -115,7 +115,7 @@ func determineSavePath(args []string) (string, error) {
 	}
 
 	if saveAll {
-		return "", fmt.Errorf("--all requires a destination\nUse: muxie save --all -p <path>, muxie save --all -n <name>, or muxie save --all .")
+		return "", fmt.Errorf("--all requires a destination\nUse: hetki save --all -p <path>, hetki save --all -n <name>, or hetki save --all .")
 	}
 
 	return "", fmt.Errorf("no save target specified\nHint: Use -p <path>, -n <name>, or . to specify where to save")

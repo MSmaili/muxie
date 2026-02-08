@@ -3,8 +3,8 @@ package converter
 import (
 	"fmt"
 
-	"github.com/MSmaili/muxie/internal/manifest"
-	"github.com/MSmaili/muxie/internal/state"
+	"github.com/MSmaili/hetki/internal/manifest"
+	"github.com/MSmaili/hetki/internal/state"
 )
 
 func ManifestToState(ws *manifest.Workspace) *state.State {

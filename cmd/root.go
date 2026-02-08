@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/MSmaili/muxie/internal/logger"
+	"github.com/MSmaili/hetki/internal/logger"
 	"github.com/spf13/cobra"
 )
 
@@ -15,11 +15,11 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:          "muxie",
-	Short:        "muxie - Tmux Session Manager",
+	Use:           "hetki",
+	Short:         "hetki - Terminal Multiplexer Session Manager",
 	SilenceUsage:  true,
 	SilenceErrors: true,
-	Long: `muxie is a powerful tmux session manager that helps you manage complex tmux sessions with ease.
+	Long: `hetki is a powerful terminal multiplexer session manager that helps you manage complex tmux and zellij sessions with ease.
 
 It supports:
 - Multiple sessions and windows with panes
@@ -30,7 +30,7 @@ It supports:
 }
 
 func init() {
-	rootCmd.SetVersionTemplate(fmt.Sprintf("muxie version %s\ncommit: %s\nbuilt: %s\n", Version, GitCommit, BuildDate))
+	rootCmd.SetVersionTemplate(fmt.Sprintf("hetki version %s\ncommit: %s\nbuilt: %s\n", Version, GitCommit, BuildDate))
 }
 
 func Execute() {

@@ -58,7 +58,7 @@ func TestResolverLocalWorkspace(t *testing.T) {
 	err := os.Chdir(tmpDir)
 	require.NoError(t, err)
 
-	localPath := filepath.Join(tmpDir, ".muxie.yaml")
+	localPath := filepath.Join(tmpDir, ".hetki.yaml")
 	err = os.WriteFile(localPath, []byte("sessions: {}"), 0644)
 	require.NoError(t, err)
 
@@ -94,7 +94,7 @@ func TestResolverPrefersNamedOverLocal(t *testing.T) {
 	err = os.Chdir(localDir)
 	require.NoError(t, err)
 
-	localPath := filepath.Join(localDir, ".muxie.yaml")
+	localPath := filepath.Join(localDir, ".hetki.yaml")
 	err = os.WriteFile(localPath, []byte("sessions: {}"), 0644)
 	require.NoError(t, err)
 

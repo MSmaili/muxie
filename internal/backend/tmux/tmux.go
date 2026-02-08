@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/MSmaili/muxie/internal/backend"
-	"github.com/MSmaili/muxie/internal/plan"
+	"github.com/MSmaili/hetki/internal/backend"
+	"github.com/MSmaili/hetki/internal/plan"
 )
 
 type TmuxBackend struct {

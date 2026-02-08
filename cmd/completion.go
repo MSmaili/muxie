@@ -3,7 +3,7 @@ package cmd
 import (
 	"path/filepath"
 
-	"github.com/MSmaili/muxie/internal/manifest"
+	"github.com/MSmaili/hetki/internal/manifest"
 	"github.com/spf13/cobra"
 )
 

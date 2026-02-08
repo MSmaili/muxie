@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/MSmaili/muxie/internal/backend"
+	"github.com/MSmaili/hetki/internal/backend"
 	"github.com/spf13/cobra"
 )
 
@@ -17,10 +17,10 @@ var switchCmd = &cobra.Command{
 	Long: `Switch to a tmux target (session, window, or pane).
 
 The target can be passed as an argument or piped from stdin:
-  muxie switch dev
-  muxie switch dev:editor
-  muxie switch dev:editor:0
-  muxie list sessions -w | fzf | muxie switch`,
+  hetki switch dev
+  hetki switch dev:editor
+  hetki switch dev:editor:0
+  hetki list sessions -w | fzf | hetki switch`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runSwitch,
 }
@@ -37,7 +37,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	} else {
 		line, err := readStdinLine()
 		if err != nil {
-			return fmt.Errorf("no target provided\nUsage: muxie switch <target> or pipe from stdin")
+			return fmt.Errorf("no target provided\nUsage: hetki switch <target> or pipe from stdin")
 		}
 		raw = line
 	}

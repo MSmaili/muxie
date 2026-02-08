@@ -3,12 +3,12 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/MSmaili/muxie/internal/backend"
-	"github.com/MSmaili/muxie/internal/converter"
-	"github.com/MSmaili/muxie/internal/logger"
-	"github.com/MSmaili/muxie/internal/manifest"
-	"github.com/MSmaili/muxie/internal/plan"
-	"github.com/MSmaili/muxie/internal/state"
+	"github.com/MSmaili/hetki/internal/backend"
+	"github.com/MSmaili/hetki/internal/converter"
+	"github.com/MSmaili/hetki/internal/logger"
+	"github.com/MSmaili/hetki/internal/manifest"
+	"github.com/MSmaili/hetki/internal/plan"
+	"github.com/MSmaili/hetki/internal/state"
 	"github.com/spf13/cobra"
 )
 

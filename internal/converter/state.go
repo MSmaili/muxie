@@ -1,8 +1,8 @@
 package converter
 
 import (
-	"github.com/MSmaili/muxie/internal/plan"
-	"github.com/MSmaili/muxie/internal/state"
+	"github.com/MSmaili/hetki/internal/plan"
+	"github.com/MSmaili/hetki/internal/state"
 )
 
 func StateDiffToPlanDiff(sd state.Diff, desired *state.State) plan.Diff {

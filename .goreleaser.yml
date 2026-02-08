@@ -1,13 +1,13 @@
-project_name: muxie
+project_name: hetki
 
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - id: muxie
+  - id: hetki
     main: .
-    binary: muxie
+    binary: hetki
     env:
       - CGO_ENABLED=0
     goos:
@@ -18,23 +18,35 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/MSmaili/muxie/cmd.Version={{.Version}}
-      - -X github.com/MSmaili/muxie/cmd.GitCommit={{.ShortCommit}}
-      - -X github.com/MSmaili/muxie/cmd.BuildDate={{.Date}}
+      - -X github.com/MSmaili/hetki/cmd.Version={{.Version}}
+      - -X github.com/MSmaili/hetki/cmd.GitCommit={{.ShortCommit}}
+      - -X github.com/MSmaili/hetki/cmd.BuildDate={{.Date}}
 
 archives:
-  - id: muxie
-    format: tar.gz
+  - id: hetki
+    format: binary
     name_template: >-
       {{ .ProjectName }}-
       {{- .Os }}-
       {{- .Arch }}
-    files:
-      - README.md
 
 checksum:
   name_template: 'checksums.txt'
   algorithm: sha256
+
+# Sign the checksums file with GPG (optional, requires GPG key)
+# Uncomment the following to enable GPG signing:
+# signs:
+#   - artifacts: checksum
+#     cmd: gpg
+#     args:
+#       - --batch
+#       - --local-user
+#       - "{{ .Env.GPG_FINGERPRINT }}"
+#       - --output
+#       - "${signature}"
+#       - --detach-sign
+#       - "${artifact}"
 
 changelog:
   sort: asc
@@ -47,6 +59,6 @@ changelog:
 release:
   github:
     owner: MSmaili
-    name: muxie
+    name: hetki
   draft: false
   prerelease: auto

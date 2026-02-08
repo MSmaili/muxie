@@ -1,8 +1,8 @@
 package converter
 
 import (
-	"github.com/MSmaili/muxie/internal/backend"
-	"github.com/MSmaili/muxie/internal/state"
+	"github.com/MSmaili/hetki/internal/backend"
+	"github.com/MSmaili/hetki/internal/state"
 )
 
 func BackendResultToState(result backend.StateResult) *state.State {

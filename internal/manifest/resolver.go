@@ -49,7 +49,7 @@ func (r *Resolver) LocalPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("getting current directory: %w", err)
 	}
-	return filepath.Join(cwd, ".muxie"+DefaultExt), nil
+	return filepath.Join(cwd, ".hetki"+DefaultExt), nil
 }
 
 func hasValidExt(name string) bool {
@@ -97,11 +97,11 @@ func (r *Resolver) findLocalWorkspace() (string, error) {
 	}
 
 	for _, ext := range []string{".yaml", ".yml", ".json"} {
-		path := filepath.Join(cwd, ".muxie"+ext)
+		path := filepath.Join(cwd, ".hetki"+ext)
 		if _, err := os.Stat(path); err == nil {
 			return path, nil
 		}
 	}
 
-	return "", fmt.Errorf("no local workspace found (.muxie.{yaml,yml,json})\nHint: Create one with 'muxie save .' or specify a workspace name")
+	return "", fmt.Errorf("no local workspace found (.hetki.{yaml,yml,json})\nHint: Create one with 'hetki save .' or specify a workspace name")
 }
