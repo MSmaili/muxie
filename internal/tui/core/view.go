@@ -46,16 +46,16 @@ func (m model) View() tea.View {
 	for i := start; i < end && len(visibleRows) < m.listH; i++ {
 		r := m.rows[i]
 		visibleRows = append(visibleRows, components.TreeRowProps{
-			NodeID:      r.Node.ID,
-			Kind:        r.Node.Kind,
-			Label:       r.Node.Label,
-			Depth:       r.Depth,
-			TreePrefix:  r.TreePrefix,
-			Expanded:    r.Expanded,
-			Branch:      r.Branch,
-			Active:      r.Node.Active,
-			Selected:    i == m.cursor,
-			WindowCount: sessionWindowCount(r),
+			NodeID:     r.Node.ID,
+			Kind:       r.Node.Kind,
+			Label:      r.Node.Label,
+			Path:       r.Node.Path,
+			Depth:      r.Depth,
+			TreePrefix: r.TreePrefix,
+			Expanded:   r.Expanded,
+			Branch:     r.Branch,
+			Active:     r.Node.Active,
+			Selected:   i == m.cursor,
 		})
 	}
 	rowLines := components.RenderTree(components.TreeProps{
@@ -68,6 +68,7 @@ func (m model) View() tea.View {
 			Row:         t.row,
 			SessionRow:  t.sessionRow,
 			WindowRow:   t.windowRow,
+			WindowPath:  t.windowPath,
 			ActiveRow:   t.activeRow,
 			SelectedRow: t.selectedRow,
 			Rail:        t.rail,

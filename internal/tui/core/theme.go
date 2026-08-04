@@ -8,6 +8,7 @@ type theme struct {
 	row          lipgloss.Style
 	sessionRow   lipgloss.Style
 	windowRow    lipgloss.Style
+	windowPath   lipgloss.Style
 	activeRow    lipgloss.Style
 	selectedRow  lipgloss.Style
 	selectedHint lipgloss.Style
@@ -30,6 +31,7 @@ func defaultTheme() theme {
 		row:          lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
 		sessionRow:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("224")),
 		windowRow:    lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
+		windowPath:   lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true),
 		activeRow:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("181")),
 		selectedRow:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230")).Background(lipgloss.Color("60")),
 		selectedHint: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("181")),

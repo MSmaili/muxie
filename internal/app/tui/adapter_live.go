@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/MSmaili/hetki/internal/backend"
@@ -173,6 +174,8 @@ func (a *LiveAdapter) snapshotFromBackend(ctx context.Context) (contracts.Snapsh
 		},
 	}
 
+	homeDir, _ := os.UserHomeDir()
+
 	for _, sess := range result.Sessions {
 		sessionNode := contracts.Node{
 			ID:     "session:" + sess.Name,
@@ -195,6 +198,7 @@ func (a *LiveAdapter) snapshotFromBackend(ctx context.Context) (contracts.Snapsh
 				Kind:     contracts.NodeKindWindow,
 				Label:    windowLabel,
 				Target:   windowTarget,
+				Path:     displayPath(win.Path, homeDir),
 				Active:   isActiveWindow,
 			}
 
@@ -259,6 +263,22 @@ func activeWorkspacePath(b backend.Backend) (string, error) {
 		return "", fmt.Errorf("failed to query sessions for workspace inheritance: %w", err)
 	}
 	return strings.TrimSpace(workspacePathForSession(state.Sessions, state.Active.Session)), nil
+}
+
+// displayPath renders a filesystem path for the UI, collapsing the user's
+// home directory to "~" so window locations stay compact and readable.
+func displayPath(path, home string) string {
+	path = strings.TrimSpace(path)
+	if path == "" || home == "" {
+		return path
+	}
+	if path == home {
+		return "~"
+	}
+	if strings.HasPrefix(path, home+"/") {
+		return "~" + path[len(home):]
+	}
+	return path
 }
 
 func payloadValue(payload map[string]string, key string) string {

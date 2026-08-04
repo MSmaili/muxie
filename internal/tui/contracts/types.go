@@ -30,6 +30,7 @@ type Node struct {
 	Kind     NodeKind
 	Label    string
 	Target   string
+	Path     string
 	Active   bool
 	Children []Node
 }

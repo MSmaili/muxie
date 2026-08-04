@@ -265,13 +265,6 @@ func workspaceLabel(workspace string) string {
 	return workspace
 }
 
-func sessionWindowCount(r row) int {
-	if r.Node.Kind != contracts.NodeKindSession {
-		return 0
-	}
-	return len(r.Node.Children)
-}
-
 func truncateWidth(s string, width int) string {
 	if width <= 0 {
 		return ""
