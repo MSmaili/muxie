@@ -1,10 +1,12 @@
 package core
 
 import (
+	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/MSmaili/hetki/internal/tui/contracts"
 	"github.com/MSmaili/hetki/internal/tui/core/components"
 )
 
@@ -30,14 +32,15 @@ func (m model) View() tea.View {
 	}
 
 	contentLines := []string{
-		t.sectionLine.Render(strings.Repeat("─", innerW)),
 		components.RenderSearchBar(components.SearchBarProps{
 			Width:       innerW,
 			Filter:      m.filter,
+			Right:       headerRight(m),
 			Active:      m.mode == modeFilter,
 			Compact:     compact,
 			Style:       t.searchBox,
 			PromptStyle: t.selectedHint,
+			MetaStyle:   t.meta,
 		}),
 		t.sectionLine.Render(strings.Repeat("─", innerW)),
 	}
@@ -76,50 +79,16 @@ func (m model) View() tea.View {
 		},
 	})
 
-	statusText := m.status
-	if statusText == "" {
-		statusText = strings.ToUpper(m.modeLabel())
-	}
-	if m.busy {
-		statusText += " · busy"
-	}
-
-	statusStyle := t.status
-	if m.err != nil {
-		statusStyle = t.err
-	}
-
-	rightText := "? help"
-	if len(m.rows) > 0 {
-		rightText = components.RenderPositionLabel(m.cursor+1, len(m.rows), rightText)
-	}
-	if m.mode == modeFilter {
-		if current, total := m.filterMatchPosition(); total > 0 {
-			rightText = components.RenderMatchLabel(current, total, "? help")
-		}
-	}
-
-	bottomBar := components.RenderStatusBar(components.StatusBarProps{
-		Width:       innerW,
-		Status:      statusText,
-		Center:      workspaceContext(m.snapshot.ContextBars),
-		Right:       rightText,
-		Compact:     compact,
-		StatusStyle: statusStyle,
-		HelpStyle:   t.help,
-		MetaStyle:   t.meta,
-	})
-
 	header := strings.Join(contentLines, "\n")
 	middle := strings.Join(rowLines, "\n")
 	borderFrameV := frameStyle.GetVerticalFrameSize()
-	middleH := m.height - borderFrameV - lipgloss.Height(header) - lipgloss.Height(bottomBar)
+	middleH := m.height - borderFrameV - lipgloss.Height(header)
 	if middleH < 1 {
 		middleH = 1
 	}
 	middle = lipgloss.PlaceVertical(middleH, lipgloss.Top, middle)
 
-	content := lipgloss.JoinVertical(lipgloss.Left, header, middle, bottomBar)
+	content := lipgloss.JoinVertical(lipgloss.Left, header, middle)
 	rendered := frameStyle.Width(lineWidth).Render(content)
 
 	var overlayContent string
@@ -184,6 +153,46 @@ func (m model) View() tea.View {
 	return v
 }
 
+func headerRight(m model) string {
+	if m.err != nil {
+		return m.err.Error()
+	}
+	if m.busy {
+		return m.status
+	}
+	return sessionPositionLabel(m)
+}
+
+func sessionPositionLabel(m model) string {
+	total := 0
+	current := 0
+	selectedSessionID := ""
+	if selected, ok := m.selectedRow(); ok {
+		selectedSessionID = selected.Node.ID
+		if selected.Node.ParentID != "" {
+			selectedSessionID = selected.Node.ParentID
+		}
+	}
+	for _, row := range m.rows {
+		if row.Node.Kind != contracts.NodeKindSession {
+			continue
+		}
+		total++
+		if row.Node.ID == selectedSessionID {
+			current = total
+		}
+	}
+	position := fmt.Sprintf("%d sessions", total)
+	if current > 0 {
+		position = fmt.Sprintf("%d/%d", current, total)
+	}
+	workspace := workspaceLabel(m.snapshot.ContextBars["workspace"])
+	if workspace == "" {
+		return position
+	}
+	return workspace + "  " + position
+}
+
 func responsiveFrameStyle(base lipgloss.Style, width int) lipgloss.Style {
 	if width < 32 {
 		return lipgloss.NewStyle()
@@ -192,7 +201,7 @@ func responsiveFrameStyle(base lipgloss.Style, width int) lipgloss.Style {
 		return lipgloss.NewStyle().Padding(0, 1)
 	}
 	if width < 72 {
-		return base.Copy().Padding(0, 1)
+		return base.Padding(0, 1)
 	}
 	return base
 }

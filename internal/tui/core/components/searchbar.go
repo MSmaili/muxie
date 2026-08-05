@@ -9,10 +9,12 @@ import (
 type SearchBarProps struct {
 	Width       int
 	Filter      string
+	Right       string
 	Active      bool
 	Compact     bool
 	Style       lipgloss.Style
 	PromptStyle lipgloss.Style
+	MetaStyle   lipgloss.Style
 }
 
 func RenderSearchBar(props SearchBarProps) string {
@@ -30,10 +32,27 @@ func RenderSearchBar(props SearchBarProps) string {
 	if props.Width <= 0 {
 		return ""
 	}
-	content = truncateWidth(content, props.Width)
-	if strings.HasPrefix(content, prompt) {
-		rest := strings.TrimPrefix(content, prompt)
-		return props.PromptStyle.Render(prompt) + props.Style.Render(rest)
+
+	right := props.MetaStyle.Render(props.Right)
+	rightW := lipgloss.Width(right)
+	if rightW >= props.Width {
+		return props.MetaStyle.Render(truncateWidth(props.Right, props.Width))
 	}
-	return props.Style.Render(content)
+	leftW := props.Width
+	if rightW > 0 {
+		leftW -= rightW + 1
+	}
+	content = truncateWidth(content, leftW)
+	left := props.Style.Render(content)
+	if strings.HasPrefix(content, prompt) {
+		left = props.PromptStyle.Render(prompt) + props.Style.Render(strings.TrimPrefix(content, prompt))
+	}
+	if rightW == 0 {
+		return left
+	}
+	gap := props.Width - lipgloss.Width(left) - rightW
+	if gap < 1 {
+		gap = 1
+	}
+	return left + strings.Repeat(" ", gap) + right
 }

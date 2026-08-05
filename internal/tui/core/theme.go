@@ -18,9 +18,6 @@ type theme struct {
 	selectedRow        lipgloss.Style
 	selectedHint       lipgloss.Style
 	rail               lipgloss.Style
-	status             lipgloss.Style
-	help               lipgloss.Style
-	err                lipgloss.Style
 	sectionLine        lipgloss.Style
 	helpOverlay        lipgloss.Style
 	appBorder          lipgloss.Style
@@ -44,9 +41,6 @@ func defaultTheme() theme {
 		selectedRow:        lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230")).Background(selectionBg),
 		selectedHint:       lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("181")),
 		rail:               lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-		status:             lipgloss.NewStyle().Foreground(lipgloss.Color("151")),
-		help:               lipgloss.NewStyle().Foreground(lipgloss.Color("246")),
-		err:                lipgloss.NewStyle().Foreground(lipgloss.Color("210")).Bold(true),
 		sectionLine:        lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
 		helpOverlay: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).

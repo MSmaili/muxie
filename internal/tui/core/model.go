@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/MSmaili/hetki/internal/tui/contracts"
 )
 
@@ -134,11 +133,11 @@ func (m model) availableListHeight() int {
 }
 
 func (m model) reservedLines() int {
-	reserved := 8
-	if m.mode == modeInput || m.mode == modeConfirm {
-		reserved += 5
+	lineWidth := m.width
+	if lineWidth <= 0 {
+		lineWidth = 100
 	}
-	return reserved
+	return 2 + responsiveFrameStyle(m.theme.appBorder, lineWidth).GetVerticalFrameSize()
 }
 
 func clampOffset(offset, total, height int) int {
@@ -266,44 +265,6 @@ func workspaceLabel(workspace string) string {
 		return parent
 	}
 	return workspace
-}
-
-func truncateWidth(s string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	visualW := lipgloss.Width(s)
-	if visualW <= width {
-		return s
-	}
-	r := []rune(s)
-	if width <= 3 {
-		return string(r[:width])
-	}
-	lipglossWidth := 0
-	i := 0
-	for i < len(r) {
-		segW := lipgloss.Width(string(r[i]))
-		if lipglossWidth+segW > width-3 {
-			break
-		}
-		lipglossWidth += segW
-		i++
-	}
-	return string(r[:i]) + "..."
-}
-
-func (m model) modeLabel() string {
-	switch m.mode {
-	case modeFilter:
-		return "filter"
-	case modeInput:
-		return "input"
-	case modeConfirm:
-		return "confirm"
-	default:
-		return "browse"
-	}
 }
 
 func cloneIntent(intent contracts.Intent) *contracts.Intent {
