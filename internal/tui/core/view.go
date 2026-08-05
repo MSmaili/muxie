@@ -64,14 +64,15 @@ func (m model) View() tea.View {
 		Rows:      visibleRows,
 		Compact:   compact,
 		Styles: components.TreeStyles{
-			Meta:        t.meta,
-			Row:         t.row,
-			SessionRow:  t.sessionRow,
-			WindowRow:   t.windowRow,
-			WindowPath:  t.windowPath,
-			ActiveRow:   t.activeRow,
-			SelectedRow: t.selectedRow,
-			Rail:        t.rail,
+			Meta:               t.meta,
+			Row:                t.row,
+			SessionRow:         t.sessionRow,
+			WindowRow:          t.windowRow,
+			WindowPath:         t.windowPath,
+			WindowPathSelected: t.windowPathSelected,
+			ActiveRow:          t.activeRow,
+			SelectedRow:        t.selectedRow,
+			Rail:               t.rail,
 		},
 	})
 

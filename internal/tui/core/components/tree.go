@@ -9,14 +9,15 @@ import (
 )
 
 type TreeStyles struct {
-	Meta        lipgloss.Style
-	Row         lipgloss.Style
-	SessionRow  lipgloss.Style
-	WindowRow   lipgloss.Style
-	WindowPath  lipgloss.Style
-	ActiveRow   lipgloss.Style
-	SelectedRow lipgloss.Style
-	Rail        lipgloss.Style
+	Meta               lipgloss.Style
+	Row                lipgloss.Style
+	SessionRow         lipgloss.Style
+	WindowRow          lipgloss.Style
+	WindowPath         lipgloss.Style
+	WindowPathSelected lipgloss.Style
+	ActiveRow          lipgloss.Style
+	SelectedRow        lipgloss.Style
+	Rail               lipgloss.Style
 }
 
 type TreeRowProps struct {
@@ -54,8 +55,8 @@ func RenderTree(props TreeProps) []string {
 	return lines
 }
 
-// composeRowLine truncates the row's left content and, for window rows,
-// right-aligns a subtle, middle-truncated path in the remaining space.
+// composeRowLine right-aligns a subtle, middle-truncated path on window rows;
+// other rows are just truncated to width.
 func composeRowLine(row TreeRowProps, left string, width int, compact bool, styles TreeStyles) string {
 	path := strings.TrimSpace(row.Path)
 	if compact || path == "" || row.Kind != contracts.NodeKindWindow {
@@ -75,7 +76,11 @@ func composeRowLine(row TreeRowProps, left string, width int, compact bool, styl
 	if padding < gap {
 		padding = gap
 	}
-	return left + strings.Repeat(" ", padding) + styles.WindowPath.Render(shortened)
+	pathStyle := styles.WindowPath
+	if row.Selected {
+		pathStyle = styles.WindowPathSelected
+	}
+	return left + strings.Repeat(" ", padding) + pathStyle.Render(shortened)
 }
 
 // shortenPath fits a path into maxW columns, preferring to keep the final

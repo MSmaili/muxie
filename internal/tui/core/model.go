@@ -24,6 +24,9 @@ type row struct {
 	TreePrefix string
 	Expanded   bool
 	Branch     bool
+	// score is the filter match score: > 0 when the row itself matches the
+	// active query, 0 for ancestor-only rows and when no filter is active.
+	score int
 }
 
 type actionResultMsg struct {

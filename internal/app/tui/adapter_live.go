@@ -265,8 +265,7 @@ func activeWorkspacePath(b backend.Backend) (string, error) {
 	return strings.TrimSpace(workspacePathForSession(state.Sessions, state.Active.Session)), nil
 }
 
-// displayPath renders a filesystem path for the UI, collapsing the user's
-// home directory to "~" so window locations stay compact and readable.
+// displayPath collapses the user's home directory to "~" for compact display.
 func displayPath(path, home string) string {
 	path = strings.TrimSpace(path)
 	if path == "" || home == "" {
