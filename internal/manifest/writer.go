@@ -3,41 +3,33 @@ package manifest
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
 
-func Write(workspace *Workspace, path string) error {
-	extendedPath := expandPath(path)
-
-	if err := os.MkdirAll(filepath.Dir(extendedPath), 0755); err != nil {
-		return fmt.Errorf("create directory: %w", err)
+func Marshal(workspace *Workspace, path string) ([]byte, error) {
+	if errs := Validate(workspace); len(errs) > 0 {
+		return nil, ToError(errs)
+	}
+	if err := validate(workspace); err != nil {
+		return nil, err
 	}
 
-	var data []byte
-	var err error
-	ext := filepath.Ext(extendedPath)
-
-	switch ext {
+	switch ext := filepath.Ext(expandPath(path)); ext {
 	case ".yaml", ".yml":
-		data, err = yaml.Marshal(workspace)
+		data, err := yaml.Marshal(workspace)
 		if err != nil {
-			return fmt.Errorf("marshal yaml: %w", err)
+			return nil, fmt.Errorf("marshal yaml: %w", err)
 		}
+		return data, nil
 	case ".json":
-		data, err = json.MarshalIndent(workspace, "", "  ")
+		data, err := json.MarshalIndent(workspace, "", "  ")
 		if err != nil {
-			return fmt.Errorf("marshal json: %w", err)
+			return nil, fmt.Errorf("marshal json: %w", err)
 		}
+		return data, nil
 	default:
-		return fmt.Errorf("unsupported format: %s (use .yaml, .yml, or .json)", ext)
+		return nil, fmt.Errorf("unsupported format: %s (use .yaml, .yml, or .json)", ext)
 	}
-
-	if err := os.WriteFile(extendedPath, data, 0644); err != nil {
-		return fmt.Errorf("write file: %w", err)
-	}
-
-	return nil
 }

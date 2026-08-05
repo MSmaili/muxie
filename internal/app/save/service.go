@@ -1,7 +1,11 @@
 package save
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 
 	appshared "github.com/MSmaili/hetki/internal/app"
@@ -80,7 +84,7 @@ func getTargetSessions(b backend.Backend, saveAll bool) ([]backend.Session, erro
 
 func findCurrentSession(result backend.StateResult) ([]backend.Session, error) {
 	if result.Active.Session == "" {
-		return nil, fmt.Errorf("not in a session\nHint: Run this command from inside a multiplexer session, or use --all with -p/-n/.")
+		return nil, fmt.Errorf("not in a session\nHint: Run this command from inside a multiplexer session, or pass --all with -p, -n, or the '.' target")
 	}
 
 	for _, s := range result.Sessions {
@@ -108,11 +112,30 @@ func determineSavePath(opts Options) (string, error) {
 	}
 
 	if opts.All {
-		return "", fmt.Errorf("--all requires a destination\nUse: hetki save --all -p <path>, hetki save --all -n <name>, or hetki save --all .")
+		return "", fmt.Errorf("--all requires a destination\nUse: hetki save --all -p <path>, hetki save --all -n <name>, or hetki save --all '.'")
 	}
 
 	return "", fmt.Errorf("no save target specified\nHint: Use -p <path>, -n <name>, or . to specify where to save")
 }
+
+type destinationSnapshot struct {
+	exists bool
+	info   os.FileInfo
+	data   []byte
+}
+
+var (
+	syncSaveFile = func(file *os.File) error { return file.Sync() }
+	renameSave   = os.Rename
+	removeSave   = os.Remove
+	syncSaveDir  = func(path string) error {
+		dir, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		return errors.Join(dir.Sync(), dir.Close())
+	}
+)
 
 func saveWorkspace(sessions []backend.Session, outputPath string, saveAll bool) (string, error) {
 	absPath, err := filepath.Abs(outputPath)
@@ -120,18 +143,189 @@ func saveWorkspace(sessions []backend.Session, outputPath string, saveAll bool) 
 		return "", fmt.Errorf("resolving absolute path: %w", err)
 	}
 
-	workspace := appshared.WorkspaceFromSessions(sessions)
+	observed, err := readDestination(absPath)
+	if err != nil {
+		return "", err
+	}
 
-	if !saveAll {
-		loader := manifest.NewFileLoader(absPath)
-		if existing, err := loader.Load(); err == nil {
+	workspace := appshared.WorkspaceFromSessions(sessions)
+	if observed.exists {
+		existing, err := manifest.Parse(observed.data, absPath)
+		if err != nil {
+			return "", fmt.Errorf("existing destination is invalid: %w", err)
+		}
+		if !saveAll {
 			workspace = appshared.MergeWorkspaces(existing, workspace)
 		}
 	}
 
-	if err := manifest.Write(workspace, absPath); err != nil {
+	data, err := manifest.Marshal(workspace, absPath)
+	if err != nil {
+		return "", err
+	}
+	if err := replaceDestination(absPath, data, observed); err != nil {
 		return "", fmt.Errorf("writing workspace: %w", err)
 	}
-
 	return absPath, nil
+}
+
+func readDestination(path string) (destinationSnapshot, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return destinationSnapshot{}, nil
+	}
+	if err != nil {
+		return destinationSnapshot{}, fmt.Errorf("inspect destination: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return destinationSnapshot{}, fmt.Errorf("destination must not be a symlink: %s", path)
+	}
+	if !info.Mode().IsRegular() {
+		return destinationSnapshot{}, fmt.Errorf("destination is not a regular file: %s", path)
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return destinationSnapshot{}, fmt.Errorf("open destination: %w", err)
+	}
+	openedInfo, statErr := file.Stat()
+	if statErr != nil || !sameDestinationInfo(info, openedInfo) {
+		_ = file.Close()
+		if statErr != nil {
+			return destinationSnapshot{}, fmt.Errorf("inspect opened destination: %w", statErr)
+		}
+		return destinationSnapshot{}, fmt.Errorf("destination changed while opening: %s", path)
+	}
+	data, readErr := io.ReadAll(file)
+	readInfo, statErr := file.Stat()
+	closeErr := file.Close()
+	if err := errors.Join(readErr, statErr, closeErr); err != nil {
+		return destinationSnapshot{}, fmt.Errorf("read destination: %w", err)
+	}
+	if !sameDestinationInfo(openedInfo, readInfo) {
+		return destinationSnapshot{}, fmt.Errorf("destination changed while reading: %s", path)
+	}
+	return destinationSnapshot{exists: true, info: readInfo, data: data}, nil
+}
+
+func replaceDestination(path string, data []byte, observed destinationSnapshot) error {
+	parent := filepath.Dir(path)
+	if err := os.MkdirAll(parent, 0755); err != nil {
+		return fmt.Errorf("create destination directory: %w", err)
+	}
+
+	mode := os.FileMode(0644)
+	if observed.exists {
+		mode = observed.info.Mode().Perm()
+	}
+	tempPath, err := writeSaveTemp(parent, filepath.Base(path), data, mode)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tempPath) }()
+
+	if err := ensureDestinationUnchanged(path, observed); err != nil {
+		return err
+	}
+	if err := renameSave(tempPath, path); err != nil {
+		return fmt.Errorf("replace destination: %w", err)
+	}
+	if err := syncSaveDir(parent); err != nil {
+		if rollbackErr := restoreDestination(path, observed); rollbackErr != nil {
+			return fmt.Errorf("sync destination directory: %w; uncertain state: rollback could not be proven: %v", err, rollbackErr)
+		}
+		return fmt.Errorf("sync destination directory: %w (replacement rolled back)", err)
+	}
+	return nil
+}
+
+func writeSaveTemp(parent, base string, data []byte, mode os.FileMode) (string, error) {
+	file, err := os.CreateTemp(parent, "."+base+".tmp-*")
+	if err != nil {
+		return "", fmt.Errorf("create temporary file: %w", err)
+	}
+	path := file.Name()
+	cleanup := func() {
+		_ = file.Close()
+		_ = os.Remove(path)
+	}
+	if err := file.Chmod(mode); err != nil {
+		cleanup()
+		return "", fmt.Errorf("set temporary file mode: %w", err)
+	}
+	written, err := file.Write(data)
+	if err != nil {
+		cleanup()
+		return "", fmt.Errorf("write temporary file: %w", err)
+	}
+	if written != len(data) {
+		cleanup()
+		return "", fmt.Errorf("write temporary file: %w", io.ErrShortWrite)
+	}
+	if err := syncSaveFile(file); err != nil {
+		cleanup()
+		return "", fmt.Errorf("sync temporary file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", fmt.Errorf("close temporary file: %w", err)
+	}
+	return path, nil
+}
+
+func ensureDestinationUnchanged(path string, observed destinationSnapshot) error {
+	current, err := readDestination(path)
+	if err != nil {
+		return err
+	}
+	if current.exists != observed.exists {
+		return fmt.Errorf("destination changed since it was read; retry the save: %s", path)
+	}
+	if !observed.exists {
+		return nil
+	}
+	if !sameDestinationInfo(observed.info, current.info) || !bytes.Equal(observed.data, current.data) {
+		return fmt.Errorf("destination changed since it was read; retry the save: %s", path)
+	}
+	return nil
+}
+
+func sameDestinationInfo(a, b os.FileInfo) bool {
+	return os.SameFile(a, b) && a.Mode() == b.Mode() && a.Size() == b.Size() && a.ModTime().Equal(b.ModTime())
+}
+
+func restoreDestination(path string, observed destinationSnapshot) error {
+	parent := filepath.Dir(path)
+	if !observed.exists {
+		if err := removeSave(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := syncSaveDir(parent); err != nil {
+			return err
+		}
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("new destination still exists after rollback")
+		}
+		return nil
+	}
+
+	tempPath, err := writeSaveTemp(parent, filepath.Base(path)+".rollback", observed.data, observed.info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tempPath) }()
+	if err := renameSave(tempPath, path); err != nil {
+		return err
+	}
+	if err := syncSaveDir(parent); err != nil {
+		return err
+	}
+	restored, err := readDestination(path)
+	if err != nil {
+		return err
+	}
+	if !restored.exists || !bytes.Equal(restored.data, observed.data) || restored.info.Mode().Perm() != observed.info.Mode().Perm() {
+		return fmt.Errorf("restored destination does not match previous state")
+	}
+	return nil
 }

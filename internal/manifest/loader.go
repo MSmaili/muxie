@@ -37,27 +37,37 @@ func (l *FileLoader) Load() (*Workspace, error) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
+	return Parse(data, extendedPath)
+}
+
+func Parse(data []byte, path string) (*Workspace, error) {
 	var raw Workspace
-	ext := filepath.Ext(extendedPath)
+	ext := filepath.Ext(path)
 
 	switch ext {
 	case ".yaml", ".yml":
-		if err = yaml.Unmarshal(data, &raw); err != nil {
+		if err := yaml.Unmarshal(data, &raw); err != nil {
 			return nil, fmt.Errorf("parse yaml config: %w", err)
 		}
 	case ".json":
-		if err = json.Unmarshal(data, &raw); err != nil {
+		if err := json.Unmarshal(data, &raw); err != nil {
 			return nil, fmt.Errorf("parse json config: %w", err)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported config format: %s (use .yaml, .yml, or .json)", ext)
 	}
 
-	if err = validate(&raw); err != nil {
+	if err := validate(&raw); err != nil {
 		return nil, err
 	}
-
-	return normalize(&raw)
+	normalized, err := normalize(&raw)
+	if err != nil {
+		return nil, err
+	}
+	if errs := Validate(normalized); len(errs) > 0 {
+		return nil, ToError(errs)
+	}
+	return normalized, nil
 }
 
 func validate(cfg *Workspace) error {

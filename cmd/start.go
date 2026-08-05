@@ -18,7 +18,7 @@ var startCmd = &cobra.Command{
 
 func init() {
 	startCmd.Flags().BoolVarP(&dryRun, "dry-run", "d", false, "Print plan without executing")
-	startCmd.Flags().BoolVarP(&force, "force", "f", false, "Kill extra sessions/windows and recreate mismatched")
+	startCmd.Flags().BoolVarP(&force, "force", "f", false, "Reconcile windows inside declared sessions; never remove other sessions")
 	rootCmd.AddCommand(startCmd)
 
 	startCmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

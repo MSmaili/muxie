@@ -1,6 +1,7 @@
 package manifest
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,6 +9,42 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestResolverNamedPathAcceptsOneWorkspaceFilename(t *testing.T) {
+	resolver := &Resolver{configDir: func() (string, error) { return "/config/hetki", nil }}
+
+	for _, tt := range []struct {
+		name string
+		want string
+	}{
+		{name: "dev", want: "dev.yaml"},
+		{name: "dev.yaml", want: "dev.yaml"},
+		{name: "dev.yml", want: "dev.yml"},
+		{name: "dev.json", want: "dev.json"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path, err := resolver.NamedPath(tt.name)
+			require.NoError(t, err)
+			assert.Equal(t, filepath.Join("/config/hetki", "workspaces", tt.want), path)
+		})
+	}
+}
+
+func TestResolverNamedPathRejectsEscapeReservedAndInvalidNames(t *testing.T) {
+	configCalled := false
+	resolver := &Resolver{configDir: func() (string, error) {
+		configCalled = true
+		return t.TempDir(), nil
+	}}
+
+	for _, name := range []string{"", ".", "..", "../dev", "dir/dev", `dir\\dev`, "/tmp/dev", "dev.toml", ".yaml", " dev", "dev ", "dev\nname"} {
+		t.Run(fmt.Sprintf("%q", name), func(t *testing.T) {
+			_, err := resolver.NamedPath(name)
+			assert.Error(t, err)
+		})
+	}
+	assert.False(t, configCalled, "invalid names must fail before resolving or touching the workspace directory")
+}
 
 func TestResolverExplicitPath(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -52,10 +89,11 @@ func TestResolverNamedWorkspace(t *testing.T) {
 
 func TestResolverLocalWorkspace(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalWd, _ := os.Getwd()
-	defer os.Chdir(originalWd)
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.Chdir(originalWd)) })
 
-	err := os.Chdir(tmpDir)
+	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 
 	localPath := filepath.Join(tmpDir, ".hetki.yaml")
@@ -89,8 +127,9 @@ func TestResolverPrefersNamedOverLocal(t *testing.T) {
 	require.NoError(t, err)
 
 	localDir := t.TempDir()
-	originalWd, _ := os.Getwd()
-	defer os.Chdir(originalWd)
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.Chdir(originalWd)) })
 	err = os.Chdir(localDir)
 	require.NoError(t, err)
 

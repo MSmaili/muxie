@@ -1,6 +1,7 @@
 package save
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -62,4 +63,202 @@ func TestServiceRunWritesCurrentSessionWorkspace(t *testing.T) {
 	contents, err := os.ReadFile(outputPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(contents), "path: ~/code/hetki")
+}
+
+func TestSaveWorkspacePreservesMalformedDestination(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workspace.yaml")
+	before := []byte("sessions: [not valid")
+	require.NoError(t, os.WriteFile(path, before, 0640))
+
+	_, err := saveWorkspace(testSaveSessions(), path, false)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "existing destination is invalid")
+	after, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, before, after)
+}
+
+func TestSaveWorkspaceRejectsFinalSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.yaml")
+	path := filepath.Join(dir, "workspace.yaml")
+	before := validSavedWorkspace()
+	require.NoError(t, os.WriteFile(target, before, 0644))
+	require.NoError(t, os.Symlink(target, path))
+
+	_, err := saveWorkspace(testSaveSessions(), path, false)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "must not be a symlink")
+	after, readErr := os.ReadFile(target)
+	require.NoError(t, readErr)
+	assert.Equal(t, before, after)
+	info, statErr := os.Lstat(path)
+	require.NoError(t, statErr)
+	assert.NotZero(t, info.Mode()&os.ModeSymlink)
+}
+
+func TestSaveWorkspaceRejectsWrongFormatAndDirectory(t *testing.T) {
+	t.Run("wrong extension", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "workspace.toml")
+		_, err := saveWorkspace(testSaveSessions(), path, false)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "unsupported format")
+		_, statErr := os.Lstat(path)
+		assert.ErrorIs(t, statErr, os.ErrNotExist)
+	})
+
+	t.Run("directory destination", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "workspace.yaml")
+		require.NoError(t, os.Mkdir(path, 0755))
+		_, err := saveWorkspace(testSaveSessions(), path, false)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "not a regular file")
+	})
+}
+
+func TestSaveWorkspacePreservesMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workspace.yaml")
+	require.NoError(t, os.WriteFile(path, validSavedWorkspace(), 0600))
+
+	_, err := saveWorkspace(testSaveSessions(), path, false)
+	require.NoError(t, err)
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0600), info.Mode().Perm())
+}
+
+func TestSaveWorkspaceDetectsConflictBeforeCommit(t *testing.T) {
+	resetSaveOperations(t)
+	path := filepath.Join(t.TempDir(), "workspace.yaml")
+	before := validSavedWorkspace()
+	concurrent := []byte("sessions:\n  - name: concurrent\n    windows:\n      - name: shell\n        path: /tmp\n")
+	require.NoError(t, os.WriteFile(path, before, 0644))
+	originalSync := syncSaveFile
+	changed := false
+	syncSaveFile = func(file *os.File) error {
+		if !changed {
+			changed = true
+			require.NoError(t, os.WriteFile(path, concurrent, 0644))
+		}
+		return originalSync(file)
+	}
+
+	_, err := saveWorkspace(testSaveSessions(), path, false)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "changed since it was read")
+	after, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, concurrent, after, "the concurrent writer's bytes must not be replaced")
+}
+
+func TestSaveWorkspacePreservesPreviousBytesOnPreRenameFailure(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		inject func()
+	}{
+		{name: "sync", inject: func() { syncSaveFile = func(*os.File) error { return errors.New("sync failed") } }},
+		{name: "rename", inject: func() { renameSave = func(string, string) error { return errors.New("rename failed") } }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			resetSaveOperations(t)
+			path := filepath.Join(t.TempDir(), "workspace.yaml")
+			before := validSavedWorkspace()
+			require.NoError(t, os.WriteFile(path, before, 0644))
+			tt.inject()
+
+			_, err := saveWorkspace(testSaveSessions(), path, false)
+			require.Error(t, err)
+			after, readErr := os.ReadFile(path)
+			require.NoError(t, readErr)
+			assert.Equal(t, before, after)
+		})
+	}
+}
+
+func TestSaveWorkspaceRollsBackWhenDirectorySyncFails(t *testing.T) {
+	resetSaveOperations(t)
+	path := filepath.Join(t.TempDir(), "workspace.yaml")
+	before := validSavedWorkspace()
+	require.NoError(t, os.WriteFile(path, before, 0600))
+	originalSyncDir := syncSaveDir
+	calls := 0
+	syncSaveDir = func(path string) error {
+		calls++
+		if calls == 1 {
+			return errors.New("directory sync failed")
+		}
+		return originalSyncDir(path)
+	}
+
+	_, err := saveWorkspace(testSaveSessions(), path, false)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "replacement rolled back")
+	after, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, before, after)
+	info, statErr := os.Stat(path)
+	require.NoError(t, statErr)
+	assert.Equal(t, os.FileMode(0600), info.Mode().Perm())
+}
+
+func TestSaveWorkspaceReportsUncertainStateWhenRollbackCannotBeSynced(t *testing.T) {
+	resetSaveOperations(t)
+	path := filepath.Join(t.TempDir(), "workspace.yaml")
+	before := validSavedWorkspace()
+	require.NoError(t, os.WriteFile(path, before, 0644))
+	syncSaveDir = func(string) error { return errors.New("directory sync failed") }
+
+	_, err := saveWorkspace(testSaveSessions(), path, false)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "uncertain state")
+}
+
+func TestSaveWorkspaceRejectsUnreadableDestination(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workspace.yaml")
+	before := validSavedWorkspace()
+	require.NoError(t, os.WriteFile(path, before, 0600))
+	require.NoError(t, os.Chmod(path, 0000))
+	t.Cleanup(func() { _ = os.Chmod(path, 0600) })
+
+	_, err := saveWorkspace(testSaveSessions(), path, false)
+	if err == nil {
+		t.Skip("filesystem privileges allow reading mode-000 files")
+	}
+	assert.ErrorContains(t, err, "open destination")
+}
+
+func TestSaveWorkspaceRollsBackNewFileWhenDirectorySyncFails(t *testing.T) {
+	resetSaveOperations(t)
+	path := filepath.Join(t.TempDir(), "workspace.yaml")
+	originalSyncDir := syncSaveDir
+	calls := 0
+	syncSaveDir = func(path string) error {
+		calls++
+		if calls == 1 {
+			return errors.New("directory sync failed")
+		}
+		return originalSyncDir(path)
+	}
+
+	_, err := saveWorkspace(testSaveSessions(), path, false)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "replacement rolled back")
+	_, statErr := os.Lstat(path)
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
+func resetSaveOperations(t *testing.T) {
+	t.Helper()
+	oldSyncFile, oldRename, oldRemove, oldSyncDir := syncSaveFile, renameSave, removeSave, syncSaveDir
+	t.Cleanup(func() {
+		syncSaveFile, renameSave, removeSave, syncSaveDir = oldSyncFile, oldRename, oldRemove, oldSyncDir
+	})
+}
+
+func testSaveSessions() []backend.Session {
+	return []backend.Session{{Name: "dev", Windows: []backend.Window{{Name: "editor", Path: "/work/hetki"}}}}
+}
+
+func validSavedWorkspace() []byte {
+	return []byte("sessions:\n  - name: old\n    windows:\n      - name: shell\n        path: /tmp\n")
 }

@@ -67,12 +67,12 @@ func TestForceStrategyPlan(t *testing.T) {
 		want []Action
 	}{
 		{
-			name: "kills extra session",
+			name: "preserves undeclared session",
 			diff: Diff{
-				Sessions: ItemDiff[Session]{Extra: []Session{{Name: "old"}}},
+				Sessions: ItemDiff[Session]{Extra: []Session{{Name: "personal"}}},
 				Windows:  make(map[string]ItemDiff[Window]),
 			},
-			want: []Action{KillSessionAction{Name: "old"}},
+			want: []Action{},
 		},
 		{
 			name: "kills extra window",

@@ -9,6 +9,7 @@ import (
 
 	"github.com/MSmaili/hetki/internal/backend"
 	"github.com/MSmaili/hetki/internal/logger"
+	"github.com/MSmaili/hetki/internal/manifest"
 	"github.com/MSmaili/hetki/internal/plan"
 	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
@@ -197,6 +198,45 @@ func TestServiceRunColdStartAppliesCreateActions(t *testing.T) {
 	stampActions := stub.allActions[1]
 	if assert.Len(t, stampActions, 1) {
 		assert.IsType(t, backend.SetSessionOptionAction{}, stampActions[0])
+	}
+}
+
+func TestServiceRunForcePreservesUnrelatedSessionsInNormalAndDryRun(t *testing.T) {
+	workspace := &manifest.Workspace{Sessions: []manifest.Session{{
+		Name:    "dev",
+		Windows: []manifest.Window{{Name: "editor", Path: "/work/hetki"}},
+	}}}
+	live := backend.StateResult{Sessions: []backend.Session{
+		{Name: "dev", Windows: []backend.Window{
+			{Name: "editor", Path: "/work/hetki"},
+			{Name: "scratch", Path: "/tmp"},
+		}},
+		{Name: "personal", Windows: []backend.Window{{Name: "shell", Path: "/home/user"}}},
+	}}
+	want := []backend.Action{backend.KillWindowAction{Session: "dev", Window: "scratch"}}
+
+	for _, dryRun := range []bool{false, true} {
+		t.Run(map[bool]string{false: "normal", true: "dry-run"}[dryRun], func(t *testing.T) {
+			stub := &stubBackend{queryResult: live, dryRunLines: []string{"tmux kill-window -t dev:scratch"}}
+			service := NewService(func(...string) (backend.Backend, error) { return stub, nil })
+			service.LoadWorkspace = func(string) (*manifest.Workspace, string, error) { return workspace, "", nil }
+
+			require.NoError(t, service.Run(Options{Force: true, DryRun: dryRun}))
+			assert.Equal(t, want, stub.lastActions)
+			for _, action := range stub.lastActions {
+				_, killsSession := action.(backend.KillSessionAction)
+				assert.False(t, killsSession)
+			}
+			if dryRun {
+				assert.Equal(t, 1, stub.dryRunCalls)
+				assert.Zero(t, stub.applyCalls)
+				assert.Zero(t, stub.attachCalls)
+			} else {
+				assert.Zero(t, stub.dryRunCalls)
+				assert.Equal(t, 1, stub.applyCalls)
+				assert.Equal(t, 1, stub.attachCalls)
+			}
+		})
 	}
 }
 

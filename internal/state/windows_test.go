@@ -71,6 +71,18 @@ func TestCompareSessionWindowsTreatsWindowPathChangeAsReplacement(t *testing.T) 
 	assert.Equal(t, "~/old", diff.Extra[0].Path)
 }
 
+func TestCompareSessionWindowsDoesNotTargetDuplicateNames(t *testing.T) {
+	desired := []*Window{{Name: "editor", Path: "~/code", Panes: []*Pane{{Path: "~/code"}}}}
+	actual := []*Window{
+		{Name: "editor", Path: "~/code", Panes: []*Pane{{Path: "~/different"}}},
+		{Name: "editor", Path: "~/scratch", Panes: []*Pane{{Path: "~/scratch"}}},
+	}
+
+	diff := compareSessionWindows(desired, actual)
+	assert.Empty(t, diff.Mismatched, "a name-targeted kill would be ambiguous")
+	assert.Empty(t, diff.Extra, "a name-targeted kill would be ambiguous")
+}
+
 func TestWindowsMatchUsesBestEffortLayoutAndStrictPaneSemantics(t *testing.T) {
 	base := &Window{
 		Name:   "editor",

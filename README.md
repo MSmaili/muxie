@@ -2,6 +2,10 @@
 
 A smart terminal multiplexer session manager (supports tmux)
 
+`hetki start --force` reconciles windows only inside sessions declared by the selected workspace. It never removes unrelated sessions.
+
+Saves use optimistic conflict detection: if the destination changes while being saved, Hetki leaves the newer bytes untouched and asks you to retry.
+
 ## Installation
 
 ### Using Go

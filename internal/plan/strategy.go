@@ -18,17 +18,13 @@ type ForceStrategy struct{}
 
 func (s *ForceStrategy) Plan(diff Diff) *Plan {
 	plan := &Plan{Actions: []Action{}}
-	killExtra(plan, diff)
+	killExtraWindows(plan, diff)
 	recreateMismatched(plan, diff)
 	createMissing(plan, diff)
 	return plan
 }
 
-func killExtra(plan *Plan, diff Diff) {
-	for _, session := range diff.Sessions.Extra {
-		plan.Actions = append(plan.Actions, KillSessionAction{Name: session.Name})
-	}
-
+func killExtraWindows(plan *Plan, diff Diff) {
 	for _, sessionName := range sortedWindowDiffSessions(diff.Windows) {
 		windowDiff := diff.Windows[sessionName]
 		for _, window := range windowDiff.Extra {

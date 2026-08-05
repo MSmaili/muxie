@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 )
 
 const DefaultExt = ".yaml"
@@ -32,16 +33,34 @@ func (r *Resolver) Resolve(nameOrPath string) (string, error) {
 }
 
 func (r *Resolver) NamedPath(name string) (string, error) {
+	filename, err := workspaceFilename(name)
+	if err != nil {
+		return "", err
+	}
+
 	configDir, err := r.configDir()
 	if err != nil {
 		return "", fmt.Errorf("getting config dir: %w", err)
 	}
+	return filepath.Join(configDir, "workspaces", filename), nil
+}
 
-	if !hasValidExt(name) {
-		name = name + DefaultExt
+func workspaceFilename(name string) (string, error) {
+	if name == "" || name != strings.TrimSpace(name) || name == "." || name == ".." {
+		return "", fmt.Errorf("invalid workspace name %q", name)
+	}
+	if strings.ContainsAny(name, `/\\`) || filepath.IsAbs(name) || strings.IndexFunc(name, unicode.IsControl) >= 0 {
+		return "", fmt.Errorf("workspace name must be one filename: %q", name)
 	}
 
-	return filepath.Join(configDir, "workspaces", name), nil
+	ext := filepath.Ext(name)
+	if ext == "" {
+		return name + DefaultExt, nil
+	}
+	if !hasValidExt(name) || strings.TrimSuffix(name, ext) == "" {
+		return "", fmt.Errorf("invalid workspace extension %q (use .yaml, .yml, or .json)", ext)
+	}
+	return name, nil
 }
 
 func (r *Resolver) LocalPath() (string, error) {
