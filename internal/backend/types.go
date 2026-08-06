@@ -6,12 +6,14 @@ type StateResult struct {
 }
 
 type Session struct {
+	ID            string
 	Name          string
 	WorkspacePath string
 	Windows       []Window
 }
 
 type Window struct {
+	ID     string
 	Name   string
 	Index  int
 	Path   string
@@ -20,6 +22,7 @@ type Window struct {
 }
 
 type Pane struct {
+	ID      string
 	Index   int
 	Path    string
 	Command string
@@ -27,9 +30,12 @@ type Pane struct {
 }
 
 type ActiveContext struct {
+	SessionID   string
 	Session     string
+	WindowID    string
 	Window      string
 	WindowIndex int
+	PaneID      string
 	Pane        int
 	Path        string
 }

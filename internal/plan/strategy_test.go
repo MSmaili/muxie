@@ -78,20 +78,20 @@ func TestForceStrategyPlan(t *testing.T) {
 			name: "kills extra window",
 			diff: Diff{
 				Sessions: ItemDiff[Session]{},
-				Windows:  map[string]ItemDiff[Window]{"dev": {Extra: []Window{{Name: "unused"}}}},
+				Windows:  map[string]ItemDiff[Window]{"dev": {Extra: []Window{{ID: "@9", Name: "unused"}}}},
 			},
-			want: []Action{KillWindowAction{Session: "dev", Window: "unused"}},
+			want: []Action{KillWindowAction{Session: "dev", Window: "unused", WindowID: "@9"}},
 		},
 		{
 			name: "recreates mismatched",
 			diff: Diff{
 				Sessions: ItemDiff[Session]{},
 				Windows: map[string]ItemDiff[Window]{
-					"dev": {Mismatched: []Mismatch[Window]{{Desired: Window{Name: "editor", Path: "~/new"}, Actual: Window{Name: "editor", Path: "~/old"}}}},
+					"dev": {Mismatched: []Mismatch[Window]{{Desired: Window{Name: "editor", Path: "~/new"}, Actual: Window{ID: "@3", Name: "editor", Path: "~/old"}}}},
 				},
 			},
 			want: []Action{
-				KillWindowAction{Session: "dev", Window: "editor"},
+				KillWindowAction{Session: "dev", Window: "editor", WindowID: "@3"},
 				CreateWindowAction{Session: "dev", Name: "editor", Path: "~/new"},
 			},
 		},
@@ -115,6 +115,8 @@ func TestPlanValidate(t *testing.T) {
 		{"empty session name", []Action{CreateSessionAction{Name: "", Path: "~"}}, true},
 		{"empty window name", []Action{CreateWindowAction{Session: "dev", Name: ""}}, true},
 		{"empty window session", []Action{CreateWindowAction{Session: "", Name: "win"}}, true},
+		{"stable window target", []Action{KillWindowAction{Session: "dev", Window: "editor", WindowID: "@1"}}, false},
+		{"missing stable window target", []Action{KillWindowAction{Session: "dev", Window: "editor"}}, true},
 	}
 
 	for _, tt := range tests {

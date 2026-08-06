@@ -37,9 +37,11 @@ func TestForceKeepsUnrelatedSessionOnIsolatedTmux(t *testing.T) {
 
 	b, err := backendtmux.NewBackend()
 	require.NoError(t, err)
+	keepPath, removePath := t.TempDir(), t.TempDir()
 	require.NoError(t, b.Apply([]backend.Action{
 		backend.CreateSessionAction{Name: "dev", WindowName: "editor", Path: t.TempDir()},
-		backend.CreateWindowAction{Session: "dev", Name: "scratch", Path: t.TempDir()},
+		backend.CreateWindowAction{Session: "dev", Name: "scratch", Path: keepPath},
+		backend.CreateWindowAction{Session: "dev", Name: "scratch", Path: removePath},
 		backend.CreateSessionAction{Name: "personal", WindowName: "shell", Path: t.TempDir()},
 	}))
 
@@ -47,12 +49,13 @@ func TestForceKeepsUnrelatedSessionOnIsolatedTmux(t *testing.T) {
 	require.NoError(t, err)
 	dev := findBackendSession(t, live.Sessions, "dev")
 	editor := findBackendWindow(t, dev.Windows, "editor")
+	scratch := findBackendWindow(t, dev.Windows, "scratch")
 	workspace := &manifest.Workspace{Sessions: []manifest.Session{{
 		Name: "dev",
-		Windows: []manifest.Window{{
-			Name: editor.Name, Path: editor.Path, Layout: editor.Layout,
-			Panes: manifestPanes(editor.Panes),
-		}},
+		Windows: []manifest.Window{
+			{Name: editor.Name, Path: editor.Path, Layout: editor.Layout, Panes: manifestPanes(editor.Panes)},
+			{Name: scratch.Name, Path: scratch.Path, Layout: scratch.Layout, Panes: manifestPanes(scratch.Panes)},
+		},
 	}}}
 	service := NewService(func(...string) (backend.Backend, error) { return b, nil })
 	service.LoadWorkspace = func(string) (*manifest.Workspace, string, error) { return workspace, "", nil }
@@ -61,7 +64,9 @@ func TestForceKeepsUnrelatedSessionOnIsolatedTmux(t *testing.T) {
 	after, err := b.QueryState()
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"dev", "personal"}, backendSessionNames(after.Sessions))
-	assert.Equal(t, []string{"editor"}, backendWindowNames(findBackendSession(t, after.Sessions, "dev").Windows))
+	devAfter := findBackendSession(t, after.Sessions, "dev")
+	assert.Equal(t, []string{"editor", "scratch"}, backendWindowNames(devAfter.Windows))
+	assert.Equal(t, scratch.ID, findBackendWindow(t, devAfter.Windows, "scratch").ID, "force must preserve the matched duplicate by stable ID")
 	_, err = os.Stat(navigationLog)
 	assert.NoError(t, err)
 }

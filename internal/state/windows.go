@@ -22,9 +22,7 @@ func compareWindows(diff *Diff, desired, actual *State) {
 }
 
 func compareSessionWindows(desired, actual []*Window) ItemDiff[Window] {
-	actualMap := windowsByKey(actual)
-	actualNameCounts := windowNameCounts(actual)
-
+	matched := make([]bool, len(actual))
 	windowDiff := ItemDiff[Window]{
 		Missing:    make([]Window, 0, len(desired)),
 		Extra:      make([]Window, 0, len(actual)),
@@ -32,40 +30,40 @@ func compareSessionWindows(desired, actual []*Window) ItemDiff[Window] {
 	}
 
 	for _, desiredWindow := range desired {
-		key := keyForWindow(desiredWindow)
-		actualWindow, exists := actualMap[key]
-		if !exists {
+		candidate := -1
+		for i, actualWindow := range actual {
+			if matched[i] || keyForWindow(desiredWindow) != keyForWindow(actualWindow) {
+				continue
+			}
+			if candidate < 0 {
+				candidate = i
+			}
+			if windowsMatch(desiredWindow, actualWindow) {
+				candidate = i
+				break
+			}
+		}
+		if candidate < 0 {
 			windowDiff.Missing = append(windowDiff.Missing, *desiredWindow)
-		} else {
-			if !windowsMatch(desiredWindow, actualWindow) && actualNameCounts[actualWindow.Name] == 1 {
-				windowDiff.Mismatched = append(windowDiff.Mismatched, Mismatch[Window]{
-					Desired: *desiredWindow,
-					Actual:  *actualWindow,
-				})
-			}
-			delete(actualMap, key)
+			continue
+		}
+
+		matched[candidate] = true
+		actualWindow := actual[candidate]
+		if !windowsMatch(desiredWindow, actualWindow) {
+			windowDiff.Mismatched = append(windowDiff.Mismatched, Mismatch[Window]{
+				Desired: *desiredWindow,
+				Actual:  *actualWindow,
+			})
 		}
 	}
 
-	for _, actualWindow := range actual {
-		key := keyForWindow(actualWindow)
-		if _, exists := actualMap[key]; exists {
-			if actualNameCounts[actualWindow.Name] == 1 {
-				windowDiff.Extra = append(windowDiff.Extra, *actualWindow)
-			}
-			delete(actualMap, key)
+	for i, actualWindow := range actual {
+		if !matched[i] {
+			windowDiff.Extra = append(windowDiff.Extra, *actualWindow)
 		}
 	}
-
 	return windowDiff
-}
-
-func windowNameCounts(windows []*Window) map[string]int {
-	counts := make(map[string]int, len(windows))
-	for _, window := range windows {
-		counts[window.Name]++
-	}
-	return counts
 }
 
 func windowsMatch(desired, actual *Window) bool {
@@ -113,14 +111,6 @@ func isNamedLayout(layout string) bool {
 	default:
 		return false
 	}
-}
-
-func windowsByKey(windows []*Window) map[windowKey]*Window {
-	m := make(map[windowKey]*Window, len(windows))
-	for _, w := range windows {
-		m[keyForWindow(w)] = w
-	}
-	return m
 }
 
 func keyForWindow(w *Window) windowKey {

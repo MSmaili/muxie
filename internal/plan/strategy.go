@@ -29,8 +29,9 @@ func killExtraWindows(plan *Plan, diff Diff) {
 		windowDiff := diff.Windows[sessionName]
 		for _, window := range windowDiff.Extra {
 			plan.Actions = append(plan.Actions, KillWindowAction{
-				Session: sessionName,
-				Window:  window.Name,
+				Session:  sessionName,
+				Window:   window.Name,
+				WindowID: window.ID,
 			})
 		}
 	}
@@ -41,8 +42,9 @@ func recreateMismatched(plan *Plan, diff Diff) {
 		windowDiff := diff.Windows[sessionName]
 		for _, mismatch := range windowDiff.Mismatched {
 			plan.Actions = append(plan.Actions, KillWindowAction{
-				Session: sessionName,
-				Window:  mismatch.Actual.Name,
+				Session:  sessionName,
+				Window:   mismatch.Actual.Name,
+				WindowID: mismatch.Actual.ID,
 			})
 			createWindow(plan, sessionName, mismatch.Desired)
 		}

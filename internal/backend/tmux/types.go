@@ -1,6 +1,7 @@
 package tmux
 
 type Window struct {
+	ID     string
 	Name   string
 	Index  int
 	Path   string
@@ -9,6 +10,8 @@ type Window struct {
 }
 
 type Pane struct {
+	ID      string
+	Index   int
 	Path    string
 	Command string
 	Zoom    bool

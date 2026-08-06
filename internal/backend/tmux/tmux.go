@@ -53,13 +53,15 @@ func (b *TmuxBackend) QueryState() (backend.StateResult, error) {
 			panes := make([]backend.Pane, len(w.Panes))
 			for k, p := range w.Panes {
 				panes[k] = backend.Pane{
-					Index:   k,
+					ID:      p.ID,
+					Index:   p.Index,
 					Path:    p.Path,
 					Command: p.Command,
 					Zoom:    p.Zoom,
 				}
 			}
 			windows[j] = backend.Window{
+				ID:     w.ID,
 				Name:   w.Name,
 				Index:  w.Index,
 				Path:   w.Path,
@@ -68,6 +70,7 @@ func (b *TmuxBackend) QueryState() (backend.StateResult, error) {
 			}
 		}
 		sessions[i] = backend.Session{
+			ID:            s.ID,
 			Name:          s.Name,
 			WorkspacePath: s.WorkspacePath,
 			Windows:       windows,
@@ -77,9 +80,12 @@ func (b *TmuxBackend) QueryState() (backend.StateResult, error) {
 	return backend.StateResult{
 		Sessions: sessions,
 		Active: backend.ActiveContext{
+			SessionID:   result.Active.SessionID,
 			Session:     result.Active.Session,
+			WindowID:    result.Active.WindowID,
 			Window:      result.Active.Window,
 			WindowIndex: result.Active.WindowIndex,
+			PaneID:      result.Active.PaneID,
 			Pane:        result.Active.Pane,
 			Path:        result.Active.Path,
 		},
@@ -87,8 +93,15 @@ func (b *TmuxBackend) QueryState() (backend.StateResult, error) {
 }
 
 func (b *TmuxBackend) Apply(actions []backend.Action) error {
-	tmuxActions := b.mapActions(actions)
-	return b.client.ExecuteBatch(tmuxActions)
+	for i, action := range actions {
+		if action == nil {
+			return fmt.Errorf("action %d is nil", i)
+		}
+		if err := action.Validate(); err != nil {
+			return fmt.Errorf("action %d is invalid: %w", i, err)
+		}
+	}
+	return b.client.ExecuteBatch(b.mapActions(actions))
 }
 
 func (b *TmuxBackend) DryRun(actions []backend.Action) []string {
@@ -148,10 +161,18 @@ func findWindowIndex(sessions []Session, sessionName, windowName string) (int, e
 		if s.Name != sessionName {
 			continue
 		}
+		index := -1
 		for _, w := range s.Windows {
-			if w.Name == windowName {
-				return w.Index, nil
+			if w.Name != windowName {
+				continue
 			}
+			if index >= 0 {
+				return 0, fmt.Errorf("window name %q is ambiguous in session %q", windowName, sessionName)
+			}
+			index = w.Index
+		}
+		if index >= 0 {
+			return index, nil
 		}
 		return 0, fmt.Errorf("window %q not found in session %q", windowName, sessionName)
 	}
@@ -159,7 +180,22 @@ func findWindowIndex(sessions []Session, sessionName, windowName string) (int, e
 }
 
 func resolveWindowIndex(sessions []Session, sessionName, window string) (int, error) {
-	if idx, err := strconv.Atoi(strings.TrimSpace(window)); err == nil {
+	window = strings.TrimSpace(window)
+	if strings.HasPrefix(window, "@") {
+		for _, session := range sessions {
+			if session.Name != sessionName {
+				continue
+			}
+			for _, candidate := range session.Windows {
+				if candidate.ID == window {
+					return candidate.Index, nil
+				}
+			}
+			return 0, fmt.Errorf("window ID %q not found in session %q", window, sessionName)
+		}
+		return 0, fmt.Errorf("session %q not found", sessionName)
+	}
+	if idx, err := strconv.Atoi(window); err == nil {
 		if windowIndexExists(sessions, sessionName, idx) {
 			return idx, nil
 		}
@@ -206,7 +242,7 @@ func (b *TmuxBackend) mapAction(a backend.Action, windowIndex map[string]int) Ac
 	case backend.RenameSessionAction:
 		return RenameSession{Target: action.Current, Name: action.New}
 	case backend.RenameWindowAction:
-		return RenameWindow{Target: fmt.Sprintf("%s:%s", action.Session, action.Window), Name: action.New}
+		return RenameWindow{Target: action.WindowID, Name: action.New}
 	case backend.SplitPaneAction:
 		return SplitPane{Target: fmt.Sprintf("%s:%d", action.Session, windowIndex[action.Session]), Path: action.Path}
 	case backend.SendKeysAction:
@@ -218,7 +254,7 @@ func (b *TmuxBackend) mapAction(a backend.Action, windowIndex map[string]int) Ac
 	case backend.KillSessionAction:
 		return KillSession{Name: action.Name}
 	case backend.KillWindowAction:
-		return KillWindow{Target: fmt.Sprintf("%s:%s", action.Session, action.Window)}
+		return KillWindow{Target: action.WindowID}
 	case backend.SetSessionOptionAction:
 		return SetSessionOption{Session: action.Session, Key: action.Key, Value: action.Value}
 	default:

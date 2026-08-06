@@ -208,16 +208,16 @@ func TestServiceRunForcePreservesUnrelatedSessionsInNormalAndDryRun(t *testing.T
 	}}}
 	live := backend.StateResult{Sessions: []backend.Session{
 		{Name: "dev", Windows: []backend.Window{
-			{Name: "editor", Path: "/work/hetki"},
-			{Name: "scratch", Path: "/tmp"},
+			{ID: "@1", Name: "editor", Path: "/work/hetki"},
+			{ID: "@9", Name: "scratch", Path: "/tmp"},
 		}},
 		{Name: "personal", Windows: []backend.Window{{Name: "shell", Path: "/home/user"}}},
 	}}
-	want := []backend.Action{backend.KillWindowAction{Session: "dev", Window: "scratch"}}
+	want := []backend.Action{backend.KillWindowAction{Session: "dev", Window: "scratch", WindowID: "@9"}}
 
 	for _, dryRun := range []bool{false, true} {
 		t.Run(map[bool]string{false: "normal", true: "dry-run"}[dryRun], func(t *testing.T) {
-			stub := &stubBackend{queryResult: live, dryRunLines: []string{"tmux kill-window -t dev:scratch"}}
+			stub := &stubBackend{queryResult: live, dryRunLines: []string{"tmux kill-window -t @9"}}
 			service := NewService(func(...string) (backend.Backend, error) { return stub, nil })
 			service.LoadWorkspace = func(string) (*manifest.Workspace, string, error) { return workspace, "", nil }
 
@@ -249,7 +249,7 @@ func TestToBackendActionsMapsPlannerActions(t *testing.T) {
 		plan.SelectLayoutAction{Session: "dev", Window: "server", Layout: "tiled"},
 		plan.ZoomPaneAction{Session: "dev", Window: "server", Pane: 1},
 		plan.KillSessionAction{Name: "old"},
-		plan.KillWindowAction{Session: "dev", Window: "old-window"},
+		plan.KillWindowAction{Session: "dev", Window: "old-window", WindowID: "@7"},
 	}
 
 	assert.Equal(t, []backend.Action{
@@ -260,7 +260,7 @@ func TestToBackendActionsMapsPlannerActions(t *testing.T) {
 		backend.SelectLayoutAction{Session: "dev", Window: "server", Layout: "tiled"},
 		backend.ZoomPaneAction{Session: "dev", Window: "server", Pane: 1},
 		backend.KillSessionAction{Name: "old"},
-		backend.KillWindowAction{Session: "dev", Window: "old-window"},
+		backend.KillWindowAction{Session: "dev", Window: "old-window", WindowID: "@7"},
 	}, toBackendActions(actions))
 }
 

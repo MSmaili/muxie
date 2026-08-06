@@ -58,9 +58,10 @@ func (a RenameSessionAction) Validate() error {
 }
 
 type RenameWindowAction struct {
-	Session string
-	Window  string
-	New     string
+	Session  string
+	Window   string
+	WindowID string
+	New      string
 }
 
 func (a RenameWindowAction) Comment() string {
@@ -68,8 +69,8 @@ func (a RenameWindowAction) Comment() string {
 }
 
 func (a RenameWindowAction) Validate() error {
-	if a.Session == "" || a.Window == "" || a.New == "" {
-		return errors.New("rename window session, window, and new name cannot be empty")
+	if a.Session == "" || a.Window == "" || a.WindowID == "" || a.New == "" {
+		return errors.New("rename window session, window, stable ID, and new name cannot be empty")
 	}
 	return nil
 }
@@ -125,8 +126,9 @@ func (a KillSessionAction) Validate() error {
 }
 
 type KillWindowAction struct {
-	Session string
-	Window  string
+	Session  string
+	Window   string
+	WindowID string
 }
 
 func (a KillWindowAction) Comment() string {
@@ -134,8 +136,8 @@ func (a KillWindowAction) Comment() string {
 }
 
 func (a KillWindowAction) Validate() error {
-	if a.Session == "" || a.Window == "" {
-		return errors.New("kill window session and window cannot be empty")
+	if a.Session == "" || a.Window == "" || a.WindowID == "" {
+		return errors.New("kill window session, window, and stable ID cannot be empty")
 	}
 	return nil
 }

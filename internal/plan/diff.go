@@ -22,6 +22,7 @@ type Session struct {
 }
 
 type Window struct {
+	ID     string
 	Name   string
 	Path   string
 	Layout string

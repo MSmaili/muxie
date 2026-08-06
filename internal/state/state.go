@@ -5,11 +5,13 @@ type State struct {
 }
 
 type Session struct {
+	ID      string
 	Name    string
 	Windows []*Window
 }
 
 type Window struct {
+	ID     string
 	Name   string
 	Path   string
 	Layout string
@@ -17,6 +19,7 @@ type Window struct {
 }
 
 type Pane struct {
+	ID      string
 	Index   int
 	Path    string
 	Command string

@@ -111,7 +111,7 @@ func (a *LiveAdapter) Execute(ctx context.Context, intent contracts.Intent) (con
 		if name == "" {
 			return contracts.ActionResult{}, fmt.Errorf("new window name is required")
 		}
-		if err := b.Apply([]backend.Action{backend.RenameWindowAction{Session: session, Window: window, New: name}}); err != nil {
+		if err := b.Apply([]backend.Action{backend.RenameWindowAction{Session: session, Window: window, WindowID: window, New: name}}); err != nil {
 			return contracts.ActionResult{}, fmt.Errorf("rename window %q in %q to %q: %w", window, session, name, err)
 		}
 		return contracts.ActionResult{Message: "renamed window " + session + ":" + window + " -> " + name, NeedsRefresh: true}, nil
@@ -129,7 +129,7 @@ func (a *LiveAdapter) Execute(ctx context.Context, intent contracts.Intent) (con
 		if err != nil {
 			return contracts.ActionResult{}, err
 		}
-		if err := b.Apply([]backend.Action{backend.KillWindowAction{Session: session, Window: window}}); err != nil {
+		if err := b.Apply([]backend.Action{backend.KillWindowAction{Session: session, Window: window, WindowID: window}}); err != nil {
 			return contracts.ActionResult{}, fmt.Errorf("delete window %q in %q: %w", window, session, err)
 		}
 		return contracts.ActionResult{Message: "deleted window " + session + ":" + window, NeedsRefresh: true}, nil
@@ -176,8 +176,12 @@ func (a *LiveAdapter) snapshotFromBackend(ctx context.Context) (contracts.Snapsh
 	homeDir, _ := os.UserHomeDir()
 
 	for _, sess := range result.Sessions {
+		sessionRef := sess.ID
+		if sessionRef == "" {
+			sessionRef = sess.Name
+		}
 		sessionNode := contracts.Node{
-			ID:     "session:" + sess.Name,
+			ID:     "session:" + sessionRef,
 			Kind:   contracts.NodeKindSession,
 			Label:  sess.Name,
 			Target: sess.Name,
@@ -188,14 +192,20 @@ func (a *LiveAdapter) snapshotFromBackend(ctx context.Context) (contracts.Snapsh
 		}
 
 		for _, win := range sess.Windows {
-			windowTarget := fmt.Sprintf("%s:%d", sess.Name, win.Index)
+			windowRef := win.ID
+			windowNodeID := "window:" + windowRef
+			if windowRef == "" {
+				windowRef = fmt.Sprintf("%d", win.Index)
+				windowNodeID = fmt.Sprintf("window:%s:%s", sess.Name, windowRef)
+			}
+			windowTarget := fmt.Sprintf("%s:%s", sess.Name, windowRef)
 			windowLabel := fmt.Sprintf("%d", win.Index)
 			if win.Name != "" {
 				windowLabel = fmt.Sprintf("%d %s", win.Index, win.Name)
 			}
 			isActiveWindow := result.Active.Session == sess.Name && result.Active.WindowIndex == win.Index
 			windowNode := contracts.Node{
-				ID:       fmt.Sprintf("window:%s:%d", sess.Name, win.Index),
+				ID:       windowNodeID,
 				ParentID: sessionNode.ID,
 				Kind:     contracts.NodeKindWindow,
 				Label:    windowLabel,

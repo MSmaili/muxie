@@ -71,16 +71,31 @@ func TestCompareSessionWindowsTreatsWindowPathChangeAsReplacement(t *testing.T) 
 	assert.Equal(t, "~/old", diff.Extra[0].Path)
 }
 
-func TestCompareSessionWindowsDoesNotTargetDuplicateNames(t *testing.T) {
+func TestCompareSessionWindowsTreatsDuplicatesAsDeterministicMultiset(t *testing.T) {
 	desired := []*Window{{Name: "editor", Path: "~/code", Panes: []*Pane{{Path: "~/code"}}}}
 	actual := []*Window{
-		{Name: "editor", Path: "~/code", Panes: []*Pane{{Path: "~/different"}}},
-		{Name: "editor", Path: "~/scratch", Panes: []*Pane{{Path: "~/scratch"}}},
+		{ID: "@1", Name: "editor", Path: "~/code", Panes: []*Pane{{Path: "~/different"}}},
+		{ID: "@2", Name: "editor", Path: "~/scratch", Panes: []*Pane{{Path: "~/scratch"}}},
 	}
 
 	diff := compareSessionWindows(desired, actual)
-	assert.Empty(t, diff.Mismatched, "a name-targeted kill would be ambiguous")
-	assert.Empty(t, diff.Extra, "a name-targeted kill would be ambiguous")
+	require.Len(t, diff.Mismatched, 1)
+	assert.Equal(t, "@1", diff.Mismatched[0].Actual.ID)
+	require.Len(t, diff.Extra, 1)
+	assert.Equal(t, "@2", diff.Extra[0].ID)
+}
+
+func TestCompareSessionWindowsPrefersExactDuplicateMatch(t *testing.T) {
+	desired := []*Window{{Name: "editor", Path: "~/code", Panes: []*Pane{{Path: "~/code"}}}}
+	actual := []*Window{
+		{ID: "@1", Name: "editor", Path: "~/code", Panes: []*Pane{{Path: "~/different"}}},
+		{ID: "@2", Name: "editor", Path: "~/code", Panes: []*Pane{{Path: "~/code"}}},
+	}
+
+	diff := compareSessionWindows(desired, actual)
+	assert.Empty(t, diff.Mismatched)
+	require.Len(t, diff.Extra, 1)
+	assert.Equal(t, "@1", diff.Extra[0].ID)
 }
 
 func TestWindowsMatchUsesBestEffortLayoutAndStrictPaneSemantics(t *testing.T) {

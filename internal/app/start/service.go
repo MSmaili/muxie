@@ -75,7 +75,11 @@ func buildPlan(b backend.Backend, workspace *manifest.Workspace, force bool) (*p
 	planDiff := converter.StateDiffToPlanDiff(diff, desired)
 
 	strategy := selectStrategy(force)
-	return strategy.Plan(planDiff), nil
+	p := strategy.Plan(planDiff)
+	if err := p.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid reconciliation plan: %w", err)
+	}
+	return p, nil
 }
 
 func selectStrategy(force bool) plan.Strategy {
@@ -169,7 +173,7 @@ func toBackendAction(action plan.Action) backend.Action {
 	case plan.KillSessionAction:
 		return backend.KillSessionAction{Name: a.Name}
 	case plan.KillWindowAction:
-		return backend.KillWindowAction{Session: a.Session, Window: a.Window}
+		return backend.KillWindowAction{Session: a.Session, Window: a.Window, WindowID: a.WindowID}
 	case plan.SelectLayoutAction:
 		return backend.SelectLayoutAction{Session: a.Session, Window: a.Window, Layout: a.Layout}
 	case plan.ZoomPaneAction:

@@ -33,11 +33,40 @@ func TestQueryStatePropagatesRealFailures(t *testing.T) {
 	// Error with parsed sessions present means something is actually wrong; don't swallow it.
 	b := &TmuxBackend{client: &MockClient{
 		RunFunc: func(args ...string) (string, error) {
-			return "0\n0\n$1|dev|editor|0|layout-a|0|1|0|1|~/code|vim", errors.New("tmux boom")
+			return "0\n0\n$1|dev|@1|editor|0|layout-a|0|1|%1|0|1|~/code|vim", errors.New("tmux boom")
 		},
 	}}
 	_, err := b.QueryState()
 	assert.Error(t, err)
+}
+
+func TestQueryStatePreservesStableObjectIDsAndPaneIndex(t *testing.T) {
+	t.Setenv("TMUX", ",,1")
+	b := &TmuxBackend{client: &MockClient{RunFunc: func(args ...string) (string, error) {
+		return "0\n1\n$1|dev|@2|editor|3|layout-a|0|1|%7|4|1|~/code|vim", nil
+	}}}
+
+	result, err := b.QueryState()
+	assert.NoError(t, err)
+	if assert.Len(t, result.Sessions, 1) && assert.Len(t, result.Sessions[0].Windows, 1) && assert.Len(t, result.Sessions[0].Windows[0].Panes, 1) {
+		assert.Equal(t, "$1", result.Sessions[0].ID)
+		assert.Equal(t, "@2", result.Sessions[0].Windows[0].ID)
+		assert.Equal(t, "%7", result.Sessions[0].Windows[0].Panes[0].ID)
+		assert.Equal(t, 4, result.Sessions[0].Windows[0].Panes[0].Index)
+		assert.Equal(t, backend.ActiveContext{SessionID: "$1", Session: "dev", WindowID: "@2", Window: "editor", WindowIndex: 3, PaneID: "%7", Pane: 4, Path: "~/code"}, result.Active)
+	}
+}
+
+func TestApplyRejectsWindowDestructionWithoutStableID(t *testing.T) {
+	executed := false
+	b := &TmuxBackend{client: &MockClient{ExecuteBatchFunc: func([]Action) error {
+		executed = true
+		return nil
+	}}}
+
+	err := b.Apply([]backend.Action{backend.KillWindowAction{Session: "dev", Window: "editor"}})
+	assert.ErrorContains(t, err, "stable ID")
+	assert.False(t, executed)
 }
 
 func TestMapActionsUsesBackendActionTypes(t *testing.T) {
@@ -51,9 +80,9 @@ func TestMapActionsUsesBackendActionTypes(t *testing.T) {
 		backend.SelectLayoutAction{Session: "dev", Window: "editor", Layout: "tiled"},
 		backend.ZoomPaneAction{Session: "dev", Window: "editor", Pane: 1},
 		backend.CreateWindowAction{Session: "dev", Name: "server", Path: "~/srv"},
-		backend.RenameWindowAction{Session: "dev", Window: "server", New: "logs"},
+		backend.RenameWindowAction{Session: "dev", Window: "server", WindowID: "@2", New: "logs"},
 		backend.KillSessionAction{Name: "old"},
-		backend.KillWindowAction{Session: "dev", Window: "server"},
+		backend.KillWindowAction{Session: "dev", Window: "server", WindowID: "@2"},
 	}
 
 	assert.Equal(t, []Action{
@@ -64,9 +93,9 @@ func TestMapActionsUsesBackendActionTypes(t *testing.T) {
 		SelectLayout{Target: "dev:1", Layout: "tiled"},
 		ZoomPane{Target: "dev:1.2"},
 		CreateWindow{Session: "dev", Name: "server", Path: "~/srv"},
-		RenameWindow{Target: "dev:server", Name: "logs"},
+		RenameWindow{Target: "@2", Name: "logs"},
 		KillSession{Name: "old"},
-		KillWindow{Target: "dev:server"},
+		KillWindow{Target: "@2"},
 	}, b.mapActions(actions))
 }
 
@@ -75,9 +104,9 @@ func TestResolveWindowIndex(t *testing.T) {
 		{
 			Name: "dev",
 			Windows: []Window{
-				{Name: "editor", Index: 1},
-				{Name: "editor", Index: 2},
-				{Name: "logs", Index: 3},
+				{ID: "@1", Name: "editor", Index: 1},
+				{ID: "@2", Name: "editor", Index: 2},
+				{ID: "@3", Name: "logs", Index: 3},
 			},
 		},
 	}
@@ -88,10 +117,21 @@ func TestResolveWindowIndex(t *testing.T) {
 		assert.Equal(t, 2, idx)
 	})
 
-	t.Run("resolves by name for legacy targets", func(t *testing.T) {
+	t.Run("resolves stable ID", func(t *testing.T) {
+		idx, err := resolveWindowIndex(sessions, "dev", "@2")
+		assert.NoError(t, err)
+		assert.Equal(t, 2, idx)
+	})
+
+	t.Run("resolves unambiguous name for legacy targets", func(t *testing.T) {
 		idx, err := resolveWindowIndex(sessions, "dev", "logs")
 		assert.NoError(t, err)
 		assert.Equal(t, 3, idx)
+	})
+
+	t.Run("fails for ambiguous legacy name", func(t *testing.T) {
+		_, err := resolveWindowIndex(sessions, "dev", "editor")
+		assert.ErrorContains(t, err, "ambiguous")
 	})
 
 	t.Run("fails for unknown numeric index", func(t *testing.T) {

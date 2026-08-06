@@ -95,8 +95,9 @@ func (a KillSessionAction) Validate() error {
 }
 
 type KillWindowAction struct {
-	Session string
-	Window  string
+	Session  string
+	Window   string
+	WindowID string
 }
 
 func (a KillWindowAction) Comment() string {
@@ -104,8 +105,8 @@ func (a KillWindowAction) Comment() string {
 }
 
 func (a KillWindowAction) Validate() error {
-	if a.Session == "" || a.Window == "" {
-		return errors.New("kill window session and window cannot be empty")
+	if a.Session == "" || a.Window == "" || a.WindowID == "" {
+		return errors.New("kill window session, window, and stable ID cannot be empty")
 	}
 	return nil
 }

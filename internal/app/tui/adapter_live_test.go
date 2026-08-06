@@ -139,7 +139,7 @@ func TestLiveAdapterExecuteRenameWindow(t *testing.T) {
 
 	require.Len(t, stub.applyCalls, 1)
 	require.Len(t, stub.applyCalls[0], 1)
-	assert.Equal(t, backend.RenameWindowAction{Session: "core", Window: "2", New: "logs"}, stub.applyCalls[0][0])
+	assert.Equal(t, backend.RenameWindowAction{Session: "core", Window: "2", WindowID: "2", New: "logs"}, stub.applyCalls[0][0])
 }
 
 func TestLiveAdapterExecuteDeleteWindowParsesPaneTarget(t *testing.T) {
@@ -156,16 +156,18 @@ func TestLiveAdapterExecuteDeleteWindowParsesPaneTarget(t *testing.T) {
 
 	require.Len(t, stub.applyCalls, 1)
 	require.Len(t, stub.applyCalls[0], 1)
-	assert.Equal(t, backend.KillWindowAction{Session: "core", Window: "2"}, stub.applyCalls[0][0])
+	assert.Equal(t, backend.KillWindowAction{Session: "core", Window: "2", WindowID: "2"}, stub.applyCalls[0][0])
 }
 
 func TestLiveAdapterLoadBuildsSessionWindowTreeAndCRUDCapabilities(t *testing.T) {
 	stub := &stubBackend{state: backend.StateResult{
 		Active: backend.ActiveContext{Session: "core", WindowIndex: 1, Pane: 0},
 		Sessions: []backend.Session{{
+			ID:            "$1",
 			Name:          "core",
 			WorkspacePath: "/work/.hetki.yaml",
 			Windows: []backend.Window{{
+				ID:    "@1",
 				Index: 1,
 				Name:  "editor",
 				Panes: []backend.Pane{{Index: 0, Command: "vim"}},
@@ -186,6 +188,6 @@ func TestLiveAdapterLoadBuildsSessionWindowTreeAndCRUDCapabilities(t *testing.T)
 	require.Len(t, snapshot.Nodes[0].Children, 1)
 	assert.Empty(t, snapshot.Nodes[0].Children[0].Children)
 	assert.Equal(t, contracts.NodeKindWindow, snapshot.Nodes[0].Children[0].Kind)
-	assert.Equal(t, "core:1", snapshot.Nodes[0].Children[0].Target)
-	assert.Equal(t, "window:core:1", snapshot.ActiveNodeID)
+	assert.Equal(t, "core:@1", snapshot.Nodes[0].Children[0].Target)
+	assert.Equal(t, "window:@1", snapshot.ActiveNodeID)
 }

@@ -51,7 +51,7 @@ func convertWindowDiff(wd state.ItemDiff[state.Window]) plan.ItemDiff[plan.Windo
 		pwd.Missing = append(pwd.Missing, StateWindowToPlan(&w))
 	}
 	for _, w := range wd.Extra {
-		pwd.Extra = append(pwd.Extra, plan.Window{Name: w.Name, Path: w.Path})
+		pwd.Extra = append(pwd.Extra, StateWindowToPlan(&w))
 	}
 	for _, m := range wd.Mismatched {
 		pwd.Mismatched = append(pwd.Mismatched, plan.Mismatch[plan.Window]{
@@ -63,7 +63,7 @@ func convertWindowDiff(wd state.ItemDiff[state.Window]) plan.ItemDiff[plan.Windo
 }
 
 func StateWindowToPlan(w *state.Window) plan.Window {
-	pw := plan.Window{Name: w.Name, Path: w.Path, Layout: w.Layout}
+	pw := plan.Window{ID: w.ID, Name: w.Name, Path: w.Path, Layout: w.Layout}
 	for _, p := range w.Panes {
 		pw.Panes = append(pw.Panes, plan.Pane{Path: p.Path, Command: p.Command, Zoom: p.Zoom})
 	}
