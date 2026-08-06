@@ -79,32 +79,25 @@ func (m *model) jumpMatch(forward bool) bool {
 	if len(indices) == 0 {
 		return false
 	}
-	if len(indices) == 1 {
-		m.cursor = indices[0]
-		*m = m.reflow()
-		return true
-	}
-	currentPos := 0
-	for i, idx := range indices {
-		if idx == m.cursor {
-			currentPos = i
-			break
-		}
-		if idx > m.cursor {
-			currentPos = i
-			if !forward {
-				currentPos = i - 1
-			}
-			break
-		}
-		currentPos = i
-	}
+
+	next := indices[0]
 	if forward {
-		currentPos = (currentPos + 1) % len(indices)
+		for _, idx := range indices {
+			if idx > m.cursor {
+				next = idx
+				break
+			}
+		}
 	} else {
-		currentPos = (currentPos - 1 + len(indices)) % len(indices)
+		next = indices[len(indices)-1]
+		for i := len(indices) - 1; i >= 0; i-- {
+			if indices[i] < m.cursor {
+				next = indices[i]
+				break
+			}
+		}
 	}
-	m.cursor = indices[currentPos]
+	m.cursor = next
 	*m = m.reflow()
 	return true
 }

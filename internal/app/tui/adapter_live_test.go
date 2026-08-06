@@ -42,6 +42,16 @@ func (s *stubBackend) Switch(target string) error {
 	return nil
 }
 
+func TestLiveAdapterExecuteSwitchDoesNotRefresh(t *testing.T) {
+	stub := &stubBackend{}
+	adapter := NewLiveAdapter(func(...string) (backend.Backend, error) { return stub, nil })
+
+	result, err := adapter.Execute(context.Background(), contracts.Intent{Type: contracts.IntentSwitch, Target: "core:1"})
+	require.NoError(t, err)
+	assert.False(t, result.NeedsRefresh)
+	assert.Equal(t, []string{"core:1"}, stub.switchCalls)
+}
+
 func TestLiveAdapterExecuteCreateSessionInheritsWorkspace(t *testing.T) {
 	stub := &stubBackend{state: backend.StateResult{
 		Active: backend.ActiveContext{Session: "core"},
@@ -177,4 +187,5 @@ func TestLiveAdapterLoadBuildsSessionWindowTreeAndCRUDCapabilities(t *testing.T)
 	assert.Empty(t, snapshot.Nodes[0].Children[0].Children)
 	assert.Equal(t, contracts.NodeKindWindow, snapshot.Nodes[0].Children[0].Kind)
 	assert.Equal(t, "core:1", snapshot.Nodes[0].Children[0].Target)
+	assert.Equal(t, "window:core:1", snapshot.ActiveNodeID)
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/MSmaili/hetki/internal/tui/contracts"
 )
 
@@ -120,25 +121,35 @@ func (m model) reflow() model {
 	return m
 }
 
-func (m model) availableListHeight() int {
-	height := m.height
-	if height <= 0 {
-		height = 24
-	}
-	list := height - m.reservedLines()
-	if list < 3 {
-		return 3
-	}
-	return list
+type layoutMetrics struct {
+	lineWidth    int
+	innerWidth   int
+	middleHeight int
+	compact      bool
+	frameStyle   lipgloss.Style
 }
 
-func (m model) reservedLines() int {
+func (m model) layout() layoutMetrics {
 	lineWidth := m.width
 	if lineWidth <= 0 {
 		lineWidth = 100
 	}
-	return 2 + responsiveFrameStyle(m.theme.appBorder, lineWidth).GetVerticalFrameSize()
+	height := m.height
+	if height <= 0 {
+		height = 24
+	}
+	frameStyle := responsiveFrameStyle(m.theme.appBorder, lineWidth)
+	innerWidth := max(1, lineWidth-frameStyle.GetHorizontalFrameSize())
+	return layoutMetrics{
+		lineWidth:    lineWidth,
+		innerWidth:   innerWidth,
+		middleHeight: max(1, height-frameStyle.GetVerticalFrameSize()-2),
+		compact:      innerWidth < 56,
+		frameStyle:   frameStyle,
+	}
 }
+
+func (m model) availableListHeight() int { return m.layout().middleHeight }
 
 func clampOffset(offset, total, height int) int {
 	if total <= 0 || height <= 0 {

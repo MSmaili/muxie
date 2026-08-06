@@ -1,9 +1,8 @@
 package components
 
 import (
-	"strings"
-
 	"charm.land/lipgloss/v2"
+	"github.com/MSmaili/hetki/internal/terminal"
 )
 
 type InputModalProps struct {
@@ -17,11 +16,11 @@ type InputModalProps struct {
 }
 
 func RenderInputModal(props InputModalProps) string {
-	content := strings.Join([]string{
-		props.TitleStyle.Render(props.Title),
-		props.Prompt,
-		"> " + props.Value + "_",
+	lines := []string{
+		props.TitleStyle.Render(terminal.Sanitize(props.Title)),
+		terminal.Sanitize(props.Prompt),
+		"> " + terminal.Sanitize(props.Value) + "_",
 		props.HintStyle.Render("enter submit | esc cancel"),
-	}, "\n")
-	return props.ModalStyle.Width(min(72, props.LineWidth-8)).Render(content)
+	}
+	return renderBox(lines, props.LineWidth, 72, props.ModalStyle)
 }

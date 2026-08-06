@@ -82,6 +82,23 @@ func TestApplyFilterByNameStillWorks(t *testing.T) {
 	}
 }
 
+func TestJumpMatchMovesOneMatchFromAncestor(t *testing.T) {
+	m := newFilterModel(t)
+	m.rows = []row{
+		{Node: contracts.Node{ID: "session:dev"}},
+		{Node: contracts.Node{ID: "window:dev:0"}, score: 10},
+		{Node: contracts.Node{ID: "window:dev:1"}, score: 9},
+	}
+	m.cursor = 0
+
+	if !m.jumpMatch(true) || m.cursor != 1 {
+		t.Fatalf("first jump selected row %d, want 1", m.cursor)
+	}
+	if !m.jumpMatch(true) || m.cursor != 2 {
+		t.Fatalf("second jump selected row %d, want 2", m.cursor)
+	}
+}
+
 func TestApplyFilterEmptyRestoresAllRows(t *testing.T) {
 	m := newFilterModel(t)
 	m.filter = "svc"

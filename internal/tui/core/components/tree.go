@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/MSmaili/hetki/internal/terminal"
 	"github.com/MSmaili/hetki/internal/tui/contracts"
 )
 
@@ -58,21 +59,21 @@ func RenderTree(props TreeProps) []string {
 // composeRowLine right-aligns a subtle, middle-truncated path on window rows;
 // other rows are just truncated to width.
 func composeRowLine(row TreeRowProps, left string, width int, compact bool, styles TreeStyles) string {
-	path := strings.TrimSpace(row.Path)
+	path := strings.TrimSpace(terminal.Sanitize(row.Path))
 	if compact || path == "" || row.Kind != contracts.NodeKindWindow {
 		return truncateWidth(left, width)
 	}
 
 	const gap = 2
 	const minPathWidth = 6
-	leftW := lipgloss.Width(left)
+	leftW := terminal.Width(left)
 	avail := width - leftW - gap
 	if avail < minPathWidth {
 		return truncateWidth(left, width)
 	}
 
 	shortened := shortenPath(path, avail)
-	padding := width - leftW - lipgloss.Width(shortened)
+	padding := width - leftW - terminal.Width(shortened)
 	if padding < gap {
 		padding = gap
 	}
@@ -89,42 +90,28 @@ func shortenPath(path string, maxW int) string {
 	if maxW <= 0 {
 		return ""
 	}
-	if lipgloss.Width(path) <= maxW {
+	pathWidth := terminal.Width(path)
+	if pathWidth <= maxW {
 		return path
 	}
 
 	const ellipsis = "..."
-	runes := []rune(path)
 	if maxW <= len(ellipsis) {
-		if maxW > len(runes) {
-			maxW = len(runes)
-		}
-		return string(runes[:maxW])
+		return terminal.Truncate(path, maxW)
 	}
 
 	if idx := strings.LastIndex(path, "/"); idx > 0 {
 		tail := path[idx:]
-		if lipgloss.Width(tail)+len(ellipsis)+1 <= maxW {
-			headBudget := maxW - len(ellipsis) - lipgloss.Width(tail)
-			return truncateRunes(path, headBudget) + ellipsis + tail
+		if tailWidth := terminal.Width(tail); tailWidth+len(ellipsis)+1 <= maxW {
+			headBudget := maxW - len(ellipsis) - tailWidth
+			return terminal.Cut(path, 0, headBudget) + ellipsis + tail
 		}
 	}
 
 	avail := maxW - len(ellipsis)
 	headW := avail - avail/2
 	tailW := avail / 2
-	return string(runes[:headW]) + ellipsis + string(runes[len(runes)-tailW:])
-}
-
-func truncateRunes(s string, w int) string {
-	if w <= 0 {
-		return ""
-	}
-	runes := []rune(s)
-	if len(runes) <= w {
-		return s
-	}
-	return string(runes[:w])
+	return terminal.Cut(path, 0, headW) + ellipsis + terminal.Cut(path, pathWidth-tailW, pathWidth)
 }
 
 func renderRowLine(row TreeRowProps, styles TreeStyles, compact bool) string {
@@ -159,9 +146,9 @@ func styleRowLine(row TreeRowProps, line string, width int, styles TreeStyles) s
 }
 
 func decoratedLabel(row TreeRowProps, styles TreeStyles, compact bool) string {
-	label := strings.TrimSpace(row.Label)
+	label := strings.TrimSpace(terminal.Sanitize(row.Label))
 	if label == "" {
-		label = row.NodeID
+		label = terminal.Sanitize(row.NodeID)
 	}
 	if compact {
 		return compactLabel(row, label)

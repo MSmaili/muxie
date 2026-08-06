@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/MSmaili/hetki/internal/terminal"
 )
 
 type HelpEntry struct {
@@ -32,27 +33,28 @@ func RenderHelpOverlay(props HelpOverlayProps) string {
 	keyColW := 0
 	for _, s := range props.Sections {
 		for _, e := range s.Entries {
-			if w := lipgloss.Width(e.Keys); w > keyColW {
+			if w := terminal.Width(terminal.Sanitize(e.Keys)); w > keyColW {
 				keyColW = w
 			}
 		}
 	}
 
 	var lines []string
-	lines = append(lines, props.TitleStyle.Render(props.Title))
+	lines = append(lines, props.TitleStyle.Render(terminal.Sanitize(props.Title)))
 	for _, s := range props.Sections {
 		lines = append(lines, "")
-		lines = append(lines, props.MetaStyle.Render(s.Title))
+		lines = append(lines, props.MetaStyle.Render(terminal.Sanitize(s.Title)))
 		for _, e := range s.Entries {
-			pad := keyColW - lipgloss.Width(e.Keys)
+			keys := terminal.Sanitize(e.Keys)
+			pad := keyColW - terminal.Width(keys)
 			if pad < 0 {
 				pad = 0
 			}
-			lines = append(lines, "  "+props.KeyStyle.Render(e.Keys)+strings.Repeat(" ", pad)+"  "+e.Desc)
+			lines = append(lines, "  "+props.KeyStyle.Render(keys)+strings.Repeat(" ", pad)+"  "+terminal.Sanitize(e.Desc))
 		}
 	}
 	lines = append(lines, "")
-	lines = append(lines, props.HintStyle.Render(props.Hint))
+	lines = append(lines, props.HintStyle.Render(terminal.Sanitize(props.Hint)))
 
-	return props.OverlayStyle.Width(min(76, props.LineWidth-8)).Render(strings.Join(lines, "\n"))
+	return renderBox(lines, props.LineWidth, 76, props.OverlayStyle)
 }

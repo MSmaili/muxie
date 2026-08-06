@@ -5,9 +5,30 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/MSmaili/hetki/internal/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestLoggerSanitizesExternalArgumentsBeforeStyling(t *testing.T) {
+	output := captureLoggerOutput(t, func() {
+		logger.Plain("error: %v", assert.AnError)
+		logger.Plain("name: %s", "dev\x1b[31m-red\x1b[0m\nnext")
+	})
+	assert.Equal(t, "error: assert.AnError general error for testing\nname: dev-red\\nnext\n", output)
+}
+
+func TestHumanListOutputIsTerminalSafeButJSONIsStructural(t *testing.T) {
+	resetCommandGlobals()
+	name := "dev\x1b[31m-red\x1b[0m\nnext"
+
+	human := captureStdout(t, func() { require.NoError(t, outputNames([]string{name})) })
+	assert.Equal(t, "dev-red\\nnext\n", human)
+
+	listFormat = "json"
+	structured := captureStdout(t, func() { require.NoError(t, outputNames([]string{name})) })
+	assert.Contains(t, structured, `dev\u001b[31m-red\u001b[0m\nnext`)
+}
 
 func TestRunListWorkspaceFormats(t *testing.T) {
 	workspaceYAML := `sessions:

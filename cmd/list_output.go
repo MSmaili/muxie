@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	applist "github.com/MSmaili/hetki/internal/app/list"
+	"github.com/MSmaili/hetki/internal/terminal"
 )
 
 const (
@@ -67,7 +68,7 @@ func outputNames(names []string) error {
 		return outputJSON(names)
 	}
 	for _, n := range names {
-		fmt.Println(n)
+		fmt.Println(terminal.Sanitize(n))
 	}
 	return nil
 }
@@ -88,7 +89,7 @@ func (f *formatter) printItem(item applist.Item, lastItem bool) {
 func (f *formatter) printFlat(item applist.Item) {
 	d := listDelimiter
 	if len(item.Windows) == 0 {
-		fmt.Println(item.Name)
+		fmt.Println(terminal.Sanitize(item.Name))
 		return
 	}
 	for _, win := range item.Windows {
@@ -100,7 +101,7 @@ func (f *formatter) printFlat(item applist.Item) {
 		}
 
 		if len(win.Panes) == 0 {
-			fmt.Println(line)
+			fmt.Println(terminal.Sanitize(line))
 			continue
 		}
 		for _, p := range win.Panes {
@@ -111,7 +112,7 @@ func (f *formatter) printFlat(item applist.Item) {
 				paneStr = listMarker + fmt.Sprintf("%s%s%d", cleanLine, d, p)
 			}
 
-			fmt.Println(paneStr)
+			fmt.Println(terminal.Sanitize(paneStr))
 		}
 	}
 }
@@ -139,10 +140,10 @@ func (f *formatter) printTree(item applist.Item, lastItem bool) {
 func (f *formatter) printNode(name string, depth int, last bool) {
 	switch f.format {
 	case "indent":
-		fmt.Println(strings.Repeat("  ", depth) + name)
+		fmt.Println(strings.Repeat("  ", depth) + terminal.Sanitize(name))
 	case "tree":
 		if depth == depthRoot {
-			fmt.Println(name)
+			fmt.Println(terminal.Sanitize(name))
 			f.treePath = []bool{}
 		} else {
 			var prefix string
@@ -157,7 +158,7 @@ func (f *formatter) printNode(name string, depth int, last bool) {
 			if last {
 				branch = "└── "
 			}
-			fmt.Println(prefix + branch + name)
+			fmt.Println(prefix + branch + terminal.Sanitize(name))
 		}
 		for len(f.treePath) < depth {
 			f.treePath = append(f.treePath, false)

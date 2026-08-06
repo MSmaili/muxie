@@ -66,7 +66,7 @@ func (s Service) Run(ctx context.Context) error {
 			return contracts.ActionResult{}, err
 		}
 
-		if result.NeedsRefresh && result.Snapshot == nil {
+		if intent.Type != contracts.IntentSwitch && result.NeedsRefresh && result.Snapshot == nil {
 			snapshot, err := s.Provider.Refresh(ctx)
 			if err != nil {
 				return contracts.ActionResult{}, err

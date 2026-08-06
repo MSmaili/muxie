@@ -42,7 +42,7 @@ func (a *LiveAdapter) Execute(ctx context.Context, intent contracts.Intent) (con
 		if err := b.Switch(target); err != nil {
 			return contracts.ActionResult{}, fmt.Errorf("switch to %q: %w", target, err)
 		}
-		return contracts.ActionResult{Message: "switched to " + target, NeedsRefresh: true}, nil
+		return contracts.ActionResult{Message: "switched to " + target}, nil
 	case contracts.IntentCreateSession:
 		name := payloadValue(intent.Payload, "name")
 		if name == "" {
@@ -155,8 +155,7 @@ func (a *LiveAdapter) snapshotFromBackend(ctx context.Context) (contracts.Snapsh
 		activeWorkspace = "unmanaged"
 	}
 	snapshot := contracts.Snapshot{
-		Nodes:        make([]contracts.Node, 0, len(result.Sessions)),
-		ActiveNodeID: activeTarget,
+		Nodes: make([]contracts.Node, 0, len(result.Sessions)),
 		ContextBars: map[string]string{
 			"source":    "live",
 			"active":    activeTarget,
@@ -184,6 +183,9 @@ func (a *LiveAdapter) snapshotFromBackend(ctx context.Context) (contracts.Snapsh
 			Target: sess.Name,
 			Active: result.Active.Session == sess.Name,
 		}
+		if sessionNode.Active {
+			snapshot.ActiveNodeID = sessionNode.ID
+		}
 
 		for _, win := range sess.Windows {
 			windowTarget := fmt.Sprintf("%s:%d", sess.Name, win.Index)
@@ -200,6 +202,9 @@ func (a *LiveAdapter) snapshotFromBackend(ctx context.Context) (contracts.Snapsh
 				Target:   windowTarget,
 				Path:     displayPath(win.Path, homeDir),
 				Active:   isActiveWindow,
+			}
+			if windowNode.Active {
+				snapshot.ActiveNodeID = windowNode.ID
 			}
 
 			sessionNode.Children = append(sessionNode.Children, windowNode)

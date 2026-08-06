@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/MSmaili/hetki/internal/terminal"
 )
 
 type SearchBarProps struct {
@@ -18,7 +19,7 @@ type SearchBarProps struct {
 }
 
 func RenderSearchBar(props SearchBarProps) string {
-	search := strings.TrimSpace(props.Filter)
+	search := strings.TrimSpace(terminal.Sanitize(props.Filter))
 	prompt := "\uf002 "
 	if props.Compact && search == "" && !props.Active {
 		prompt = "\uf002 search"
@@ -33,10 +34,11 @@ func RenderSearchBar(props SearchBarProps) string {
 		return ""
 	}
 
-	right := props.MetaStyle.Render(props.Right)
-	rightW := lipgloss.Width(right)
+	rightText := terminal.Sanitize(props.Right)
+	right := props.MetaStyle.Render(rightText)
+	rightW := terminal.Width(right)
 	if rightW >= props.Width {
-		return props.MetaStyle.Render(truncateWidth(props.Right, props.Width))
+		return props.MetaStyle.Render(truncateWidth(rightText, props.Width))
 	}
 	leftW := props.Width
 	if rightW > 0 {
@@ -50,7 +52,7 @@ func RenderSearchBar(props SearchBarProps) string {
 	if rightW == 0 {
 		return left
 	}
-	gap := props.Width - lipgloss.Width(left) - rightW
+	gap := props.Width - terminal.Width(left) - rightW
 	if gap < 1 {
 		gap = 1
 	}

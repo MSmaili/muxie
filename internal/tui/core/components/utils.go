@@ -1,28 +1,25 @@
 package components
 
-import "charm.land/lipgloss/v2"
+import (
+	"strings"
 
-func truncateWidth(s string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	visualW := lipgloss.Width(s)
-	if visualW <= width {
-		return s
-	}
-	r := []rune(s)
-	if width <= 3 {
-		return string(r[:width])
-	}
-	lipglossWidth := 0
-	i := 0
-	for i < len(r) {
-		segW := lipgloss.Width(string(r[i]))
-		if lipglossWidth+segW > width-3 {
-			break
+	"charm.land/lipgloss/v2"
+	"github.com/MSmaili/hetki/internal/terminal"
+)
+
+func truncateWidth(s string, width int) string { return terminal.Truncate(s, width) }
+
+func renderBox(lines []string, lineWidth, maxContentWidth int, style lipgloss.Style) string {
+	frameWidth := style.GetHorizontalFrameSize()
+	if lineWidth <= frameWidth {
+		for i := range lines {
+			lines[i] = truncateWidth(lines[i], lineWidth)
 		}
-		lipglossWidth += segW
-		i++
+		return strings.Join(lines, "\n")
 	}
-	return string(r[:i]) + "..."
+	contentWidth := min(maxContentWidth, lineWidth-frameWidth)
+	for i := range lines {
+		lines[i] = truncateWidth(lines[i], contentWidth)
+	}
+	return style.Width(contentWidth).Render(strings.Join(lines, "\n"))
 }

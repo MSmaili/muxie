@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/MSmaili/hetki/internal/terminal"
 	"github.com/fatih/color"
 )
 
@@ -36,33 +37,50 @@ func SetVerbose(verbose bool) {
 }
 
 func Success(format string, args ...any) {
-	successColor.Fprintf(output, format+"\n", args...)
+	successColor.Fprintf(output, format+"\n", safeArgs(args)...)
 }
 
 func Error(format string, args ...any) {
-	errorColor.Fprintf(output, format+"\n", args...)
+	errorColor.Fprintf(output, format+"\n", safeArgs(args)...)
 }
 
 func Info(format string, args ...any) {
-	infoColor.Fprintf(output, format+"\n", args...)
+	infoColor.Fprintf(output, format+"\n", safeArgs(args)...)
 }
 
 func Warning(format string, args ...any) {
-	warningColor.Fprintf(output, format+"\n", args...)
+	warningColor.Fprintf(output, format+"\n", safeArgs(args)...)
 }
 
 func Plain(format string, args ...any) {
-	fmt.Fprintf(output, format+"\n", args...)
+	fmt.Fprintf(output, format+"\n", safeArgs(args)...)
 }
 
 func Debug(format string, args ...any) {
 	if debugEnabled {
-		debugColor.Fprintf(output, "[DEBUG] "+format+"\n", args...)
+		debugColor.Fprintf(output, "[DEBUG] "+format+"\n", safeArgs(args)...)
 	}
 }
 
 func Verbose(format string, args ...any) {
 	if verboseEnabled {
-		infoColor.Fprintf(output, format+"\n", args...)
+		infoColor.Fprintf(output, format+"\n", safeArgs(args)...)
 	}
+}
+
+func safeArgs(args []any) []any {
+	safe := make([]any, len(args))
+	for i, arg := range args {
+		switch value := arg.(type) {
+		case string:
+			safe[i] = terminal.Sanitize(value)
+		case error:
+			safe[i] = terminal.Sanitize(value.Error())
+		case fmt.Stringer:
+			safe[i] = terminal.Sanitize(value.String())
+		default:
+			safe[i] = arg
+		}
+	}
+	return safe
 }

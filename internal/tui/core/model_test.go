@@ -3,6 +3,9 @@ package core
 import (
 	"strings"
 	"testing"
+
+	"github.com/MSmaili/hetki/internal/terminal"
+	"github.com/MSmaili/hetki/internal/tui/contracts"
 )
 
 func TestViewKeepsWindowPathOnItsRowWithoutFooter(t *testing.T) {
@@ -27,6 +30,26 @@ func TestViewKeepsWindowPathOnItsRowWithoutFooter(t *testing.T) {
 		}
 	}
 	t.Fatal("editor row not rendered")
+}
+
+func TestViewSanitizesExternalTextAndFitsWidth(t *testing.T) {
+	snapshot := contracts.Snapshot{Nodes: []contracts.Node{{
+		ID: "session:unsafe", Kind: contracts.NodeKindSession, Label: "\x1b]0;owned\a中👨‍👩‍👧é\nnext", Active: true,
+	}}}
+	for _, width := range []int{1, 2, 3, 20} {
+		m := newModel(snapshot, nil)
+		m.width, m.height = width, 8
+		m = m.reflow()
+		content := m.View().Content
+		if strings.Contains(content, "owned") || strings.Contains(content, "\nnext") {
+			t.Fatalf("width %d rendered unsafe external text: %q", width, content)
+		}
+		for _, line := range strings.Split(content, "\n") {
+			if actual := terminal.Width(line); actual > width {
+				t.Fatalf("width %d rendered line width %d: %q", width, actual, line)
+			}
+		}
+	}
 }
 
 func TestWorkspaceContextUsesFriendlyWorkspaceLabel(t *testing.T) {

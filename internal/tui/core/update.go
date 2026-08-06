@@ -268,18 +268,18 @@ func (m model) updateFilterMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Cancel):
 		m.mode = modeBrowse
-		m.status = statusFilterCanceled
+		m.status = statusFilterClosed
 		return m, nil
 	case key.Matches(msg, m.keys.Confirm):
 		if !m.hasCapability(contracts.CapabilitySwitch) {
 			m.mode = modeBrowse
-			m.status = statusFilterApplied
+			m.status = statusFilterClosed
 			return m, nil
 		}
 		selected, ok := m.selectedRow()
 		if !ok || selected.Node.Target == "" {
 			m.mode = modeBrowse
-			m.status = statusFilterApplied
+			m.status = statusFilterClosed
 			return m, nil
 		}
 		m.mode = modeBrowse

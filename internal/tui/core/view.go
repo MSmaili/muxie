@@ -6,24 +6,18 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/MSmaili/hetki/internal/terminal"
 	"github.com/MSmaili/hetki/internal/tui/contracts"
 	"github.com/MSmaili/hetki/internal/tui/core/components"
 )
 
 func (m model) View() tea.View {
 	t := m.theme
-	lineWidth := m.width
-	if lineWidth <= 0 {
-		lineWidth = 100
-	}
-
-	frameStyle := responsiveFrameStyle(t.appBorder, lineWidth)
-	borderFrameSize := frameStyle.GetHorizontalFrameSize()
-	innerW := lineWidth - borderFrameSize
-	if innerW < 1 {
-		innerW = 1
-	}
-	compact := innerW < 56
+	layout := m.layout()
+	lineWidth := layout.lineWidth
+	frameStyle := layout.frameStyle
+	innerW := layout.innerWidth
+	compact := layout.compact
 
 	start := m.offset
 	end := m.offset + m.listH
@@ -81,12 +75,7 @@ func (m model) View() tea.View {
 
 	header := strings.Join(contentLines, "\n")
 	middle := strings.Join(rowLines, "\n")
-	borderFrameV := frameStyle.GetVerticalFrameSize()
-	middleH := m.height - borderFrameV - lipgloss.Height(header)
-	if middleH < 1 {
-		middleH = 1
-	}
-	middle = lipgloss.PlaceVertical(middleH, lipgloss.Top, middle)
+	middle = lipgloss.PlaceVertical(layout.middleHeight, lipgloss.Top, middle)
 
 	content := lipgloss.JoinVertical(lipgloss.Left, header, middle)
 	rendered := frameStyle.Width(lineWidth).Render(content)
@@ -134,7 +123,7 @@ func (m model) View() tea.View {
 	if overlayContent != "" {
 		totalH := lipgloss.Height(rendered)
 		overlayH := lipgloss.Height(overlayContent)
-		overlayW := lipgloss.Width(overlayContent)
+		overlayW := terminal.Width(overlayContent)
 		x := (lineWidth - overlayW) / 2
 		y := (totalH - overlayH) / 2
 		if x < 0 {
