@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/MSmaili/hetki/internal/backend"
@@ -71,16 +72,28 @@ func (q LoadStateQuery) Parse(output string) (LoadStateResult, error) {
 
 	lines := strings.Split(output, "\n")
 
-	var result LoadStateResult
-	if len(lines) >= 2 {
-		fmt.Sscanf(strings.TrimSpace(lines[0]), "%d", &result.WindowBaseIndex)
-		fmt.Sscanf(strings.TrimSpace(lines[1]), "%d", &result.PaneBaseIndex)
+	if len(lines) < 2 {
+		return LoadStateResult{}, fmt.Errorf("tmux state output is missing base indexes")
 	}
+	windowBaseIndex, err := strconv.Atoi(strings.TrimSpace(lines[0]))
+	if err != nil {
+		return LoadStateResult{}, fmt.Errorf("invalid window base index %q: %w", lines[0], err)
+	}
+	paneBaseIndex, err := strconv.Atoi(strings.TrimSpace(lines[1]))
+	if err != nil {
+		return LoadStateResult{}, fmt.Errorf("invalid pane base index %q: %w", lines[1], err)
+	}
+	result := LoadStateResult{WindowBaseIndex: windowBaseIndex, PaneBaseIndex: paneBaseIndex}
 
-	for _, line := range lines[2:] {
-		if p, ok := parsePaneLine(line); ok {
-			builder.addPane(p, currentID)
+	for i, line := range lines[2:] {
+		if strings.TrimSpace(line) == "" {
+			continue
 		}
+		p, err := parsePaneLine(line)
+		if err != nil {
+			return LoadStateResult{}, fmt.Errorf("invalid tmux pane row %d: %w", i+1, err)
+		}
+		builder.addPane(p, currentID)
 	}
 
 	built := builder.result()
@@ -103,59 +116,77 @@ type paneLine struct {
 	workspacePath                                string
 }
 
-func parsePaneLine(line string) (paneLine, bool) {
+func parsePaneLine(line string) (paneLine, error) {
 	line = strings.TrimSpace(line)
-	if line == "" {
-		return paneLine{}, false
+	cut := func(field string) (string, error) {
+		value, rest, ok := strings.Cut(line, "|")
+		if !ok {
+			return "", fmt.Errorf("missing %s", field)
+		}
+		line = rest
+		return value, nil
 	}
 
 	var p paneLine
-	var ok bool
-	var windowIndexStr, windowZoomedStr, windowActiveStr, paneIndexStr, paneActiveStr string
-
-	if p.sessionID, line, ok = strings.Cut(line, "|"); !ok {
-		return paneLine{}, false
+	var err error
+	if p.sessionID, err = cut("session ID"); err != nil {
+		return paneLine{}, err
 	}
-	if p.sessionName, line, ok = strings.Cut(line, "|"); !ok {
-		return paneLine{}, false
+	if p.sessionName, err = cut("session name"); err != nil {
+		return paneLine{}, err
 	}
-	if p.windowID, line, ok = strings.Cut(line, "|"); !ok {
-		return paneLine{}, false
+	if p.windowID, err = cut("window ID"); err != nil {
+		return paneLine{}, err
 	}
-	if p.windowName, line, ok = strings.Cut(line, "|"); !ok {
-		return paneLine{}, false
+	if p.windowName, err = cut("window name"); err != nil {
+		return paneLine{}, err
 	}
-	if windowIndexStr, line, ok = strings.Cut(line, "|"); !ok {
-		return paneLine{}, false
+	windowIndex, err := cut("window index")
+	if err != nil {
+		return paneLine{}, err
 	}
-	fmt.Sscanf(windowIndexStr, "%d", &p.windowIndex)
-	if p.windowLayout, line, ok = strings.Cut(line, "|"); !ok {
-		return paneLine{}, false
+	if p.windowIndex, err = parseIndex("window", windowIndex); err != nil {
+		return paneLine{}, err
 	}
-	if windowZoomedStr, line, ok = strings.Cut(line, "|"); !ok {
-		return paneLine{}, false
+	if p.windowLayout, err = cut("window layout"); err != nil {
+		return paneLine{}, err
 	}
-	p.windowZoomed = windowZoomedStr == "1"
-	if windowActiveStr, line, ok = strings.Cut(line, "|"); !ok {
-		return paneLine{}, false
+	windowZoomed, err := cut("window zoom flag")
+	if err != nil {
+		return paneLine{}, err
 	}
-	p.windowActive = windowActiveStr == "1"
-
-	if p.paneID, line, ok = strings.Cut(line, "|"); !ok {
-		return paneLine{}, false
+	if p.windowZoomed, err = parseFlag("window zoom", windowZoomed); err != nil {
+		return paneLine{}, err
 	}
-	if paneIndexStr, line, ok = strings.Cut(line, "|"); !ok {
-		return paneLine{}, false
+	windowActive, err := cut("window active flag")
+	if err != nil {
+		return paneLine{}, err
 	}
-	fmt.Sscanf(paneIndexStr, "%d", &p.paneIndex)
-
-	if paneActiveStr, line, ok = strings.Cut(line, "|"); !ok {
-		return paneLine{}, false
+	if p.windowActive, err = parseFlag("window active", windowActive); err != nil {
+		return paneLine{}, err
 	}
-	p.paneActive = paneActiveStr == "1"
-
-	if p.panePath, line, ok = strings.Cut(line, "|"); !ok {
-		return paneLine{}, false
+	if p.paneID, err = cut("pane ID"); err != nil {
+		return paneLine{}, err
+	}
+	paneIndex, err := cut("pane index")
+	if err != nil {
+		return paneLine{}, err
+	}
+	if p.paneIndex, err = parseIndex("pane", paneIndex); err != nil {
+		return paneLine{}, err
+	}
+	paneActive, err := cut("pane active flag")
+	if err != nil {
+		return paneLine{}, err
+	}
+	if p.paneActive, err = parseFlag("pane active", paneActive); err != nil {
+		return paneLine{}, err
+	}
+	if p.panePath, err = cut("pane path"); err != nil {
+		return paneLine{}, err
+	}
+	if !strings.HasPrefix(p.sessionID, "$") || !strings.HasPrefix(p.windowID, "@") || !strings.HasPrefix(p.paneID, "%") {
+		return paneLine{}, fmt.Errorf("invalid object IDs %q, %q, %q", p.sessionID, p.windowID, p.paneID)
 	}
 	if idx := strings.LastIndex(line, "|"); idx >= 0 {
 		p.paneCmd = line[:idx]
@@ -163,7 +194,26 @@ func parsePaneLine(line string) (paneLine, bool) {
 	} else {
 		p.paneCmd = line
 	}
-	return p, true
+	return p, nil
+}
+
+func parseIndex(kind, value string) (int, error) {
+	index, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || index < 0 {
+		return 0, fmt.Errorf("invalid %s index %q", kind, value)
+	}
+	return index, nil
+}
+
+func parseFlag(kind, value string) (bool, error) {
+	switch value {
+	case "0":
+		return false, nil
+	case "1":
+		return true, nil
+	default:
+		return false, fmt.Errorf("invalid %s flag %q", kind, value)
+	}
 }
 
 type stateBuilder struct {
@@ -184,7 +234,7 @@ func (b *stateBuilder) addPane(p paneLine, currentID string) {
 			b.active.Window = p.windowName
 			b.active.WindowIndex = p.windowIndex
 		}
-		if p.paneActive {
+		if p.windowActive && p.paneActive {
 			b.active.PaneID = p.paneID
 			b.active.Pane = p.paneIndex
 			b.active.Path = p.panePath

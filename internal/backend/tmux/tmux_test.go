@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/MSmaili/hetki/internal/backend"
@@ -59,7 +60,7 @@ func TestQueryStatePreservesStableObjectIDsAndPaneIndex(t *testing.T) {
 
 func TestApplyRejectsWindowDestructionWithoutStableID(t *testing.T) {
 	executed := false
-	b := &TmuxBackend{client: &MockClient{ExecuteBatchFunc: func([]Action) error {
+	b := &TmuxBackend{client: &MockClient{ExecuteFunc: func(Action) error {
 		executed = true
 		return nil
 	}}}
@@ -69,34 +70,65 @@ func TestApplyRejectsWindowDestructionWithoutStableID(t *testing.T) {
 	assert.False(t, executed)
 }
 
-func TestMapActionsUsesBackendActionTypes(t *testing.T) {
-	b := &TmuxBackend{windowBaseIndex: 1, paneBaseIndex: 1}
-
+func TestApplyUsesReturnedCreationIDsForFollowups(t *testing.T) {
+	var events []string
+	client := &MockClient{
+		RunFunc: func(args ...string) (string, error) {
+			events = append(events, "run "+strings.Join(args, " "))
+			switch args[0] {
+			case "new-session":
+				return "@10|%20", nil
+			case "new-window":
+				return "@11|%30", nil
+			case "split-window":
+				return "%21", nil
+			default:
+				return "", nil
+			}
+		},
+		ExecuteFunc: func(action Action) error {
+			events = append(events, "exec "+strings.Join(action.Args(), " "))
+			return nil
+		},
+	}
+	b := &TmuxBackend{client: client}
 	actions := []backend.Action{
 		backend.CreateSessionAction{Name: "dev", WindowName: "editor", Path: "~/code"},
-		backend.RenameSessionAction{Current: "dev", New: "core"},
 		backend.SplitPaneAction{Session: "dev", Window: "editor", Path: "~/api"},
-		backend.SendKeysAction{Session: "dev", Window: "editor", Pane: 1, Command: "npm test"},
 		backend.SelectLayoutAction{Session: "dev", Window: "editor", Layout: "tiled"},
+		backend.SendKeysAction{Session: "dev", Window: "editor", Pane: 1, Command: "npm test"},
 		backend.ZoomPaneAction{Session: "dev", Window: "editor", Pane: 1},
 		backend.CreateWindowAction{Session: "dev", Name: "server", Path: "~/srv"},
-		backend.RenameWindowAction{Session: "dev", Window: "server", WindowID: "@2", New: "logs"},
-		backend.KillSessionAction{Name: "old"},
-		backend.KillWindowAction{Session: "dev", Window: "server", WindowID: "@2"},
+		backend.RenameWindowAction{Session: "dev", Window: "server", WindowID: "@11", New: "logs"},
+		backend.KillWindowAction{Session: "dev", Window: "logs", WindowID: "@11"},
 	}
 
-	assert.Equal(t, []Action{
-		CreateSession{Name: "dev", WindowName: "editor", Path: "~/code"},
-		RenameSession{Target: "dev", Name: "core"},
-		SplitPane{Target: "dev:1", Path: "~/api"},
-		SendKeys{Target: "dev:1.2", Keys: "npm test"},
-		SelectLayout{Target: "dev:1", Layout: "tiled"},
-		ZoomPane{Target: "dev:1.2"},
-		CreateWindow{Session: "dev", Name: "server", Path: "~/srv"},
-		RenameWindow{Target: "@2", Name: "logs"},
-		KillSession{Name: "old"},
-		KillWindow{Target: "@2"},
-	}, b.mapActions(actions))
+	assert.NoError(t, b.Apply(actions))
+	assert.Equal(t, []string{
+		"run new-session -d -s dev -n editor -c ~/code -P -F #{window_id}|#{pane_id}",
+		"run split-window -t @10 -c ~/api -P -F #{pane_id}",
+		"exec select-layout -t @10 tiled",
+		"exec send-keys -t %21 npm test Enter",
+		"exec resize-pane -Z -t %21",
+		"run new-window -t dev: -n server -c ~/srv -P -F #{window_id}|#{pane_id}",
+		"exec rename-window -t @11 logs",
+		"exec kill-window -t @11",
+	}, events)
+}
+
+func TestDryRunUsesSymbolicCreatedIDsInsteadOfPredictedIndexes(t *testing.T) {
+	b := &TmuxBackend{}
+	lines := b.DryRun([]backend.Action{
+		backend.CreateSessionAction{Name: "dev", WindowName: "editor"},
+		backend.SplitPaneAction{Session: "dev", Window: "editor", Path: "~/api"},
+		backend.SendKeysAction{Session: "dev", Window: "editor", Pane: 1, Command: "npm test"},
+	})
+
+	assert.Equal(t, []string{
+		"tmux new-session -d -s dev -n editor -P -F #{window_id}|#{pane_id}",
+		"tmux split-window -t <new-window:dev:editor> -c ~/api -P -F #{pane_id}",
+		"tmux send-keys -t <new-pane:dev:editor:1> npm test Enter",
+	}, lines)
 }
 
 func TestResolveWindowIndex(t *testing.T) {

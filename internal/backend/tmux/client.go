@@ -11,7 +11,6 @@ import (
 type Client interface {
 	Run(args ...string) (string, error)
 	Execute(action Action) error
-	ExecuteBatch(actions []Action) error
 }
 
 type client struct {
@@ -55,33 +54,4 @@ func (c *client) Execute(action Action) error {
 		return err
 	}
 	return nil
-}
-
-func (c *client) ExecuteBatch(actions []Action) error {
-	if len(actions) == 0 {
-		return nil
-	}
-	return c.executeBatch(actions)
-}
-
-func (c *client) executeBatch(actions []Action) error {
-	cmd := exec.Command(c.bin, buildBatchArgs(actions)...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("tmux batch failed: %v (%s)", err, stderr.String())
-	}
-	return nil
-}
-
-func buildBatchArgs(actions []Action) []string {
-	args := make([]string, 0, len(actions)*4)
-	for i, action := range actions {
-		if i > 0 {
-			args = append(args, ";")
-		}
-		args = append(args, action.Args()...)
-	}
-	return args
 }

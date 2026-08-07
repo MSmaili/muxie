@@ -76,6 +76,9 @@ func (a SendKeysAction) Validate() error {
 	if a.Session == "" || a.Window == "" {
 		return errors.New("send keys session and window cannot be empty")
 	}
+	if a.Pane < 0 {
+		return errors.New("send keys pane cannot be negative")
+	}
 	return nil
 }
 
@@ -141,6 +144,9 @@ func (a ZoomPaneAction) Comment() string {
 func (a ZoomPaneAction) Validate() error {
 	if a.Session == "" || a.Window == "" {
 		return errors.New("zoom pane session and window cannot be empty")
+	}
+	if a.Pane < 0 {
+		return errors.New("zoom pane cannot be negative")
 	}
 	return nil
 }

@@ -92,6 +92,28 @@ func TestLoadStateQuery(t *testing.T) {
 	}
 }
 
+func TestLoadStateQueryScopesActivePaneToActiveWindow(t *testing.T) {
+	q := LoadStateQuery{}
+	t.Setenv("TMUX", ",,1")
+	output := "0\n0\n$1|dev|@1|editor|0|layout-a|0|1|%1|0|1|~/active|vim\n$1|dev|@2|logs|1|layout-b|0|0|%2|0|1|~/inactive|tail"
+
+	got, err := q.Parse(output)
+	assert.NoError(t, err)
+	assert.Equal(t, ActiveContext{SessionID: "$1", Session: "dev", WindowID: "@1", Window: "editor", WindowIndex: 0, PaneID: "%1", Pane: 0, Path: "~/active"}, got.Active)
+}
+
+func TestLoadStateQueryRejectsMalformedIndexesAndIDs(t *testing.T) {
+	q := LoadStateQuery{}
+	for _, output := range []string{
+		"bad\n0",
+		"0\n0\n$1|dev|@1|editor|bad|layout|0|1|%1|0|1|~/code|vim",
+		"0\n0\n$1|dev|bad|editor|0|layout|0|1|%1|0|1|~/code|vim",
+	} {
+		_, err := q.Parse(output)
+		assert.Error(t, err, output)
+	}
+}
+
 func TestLoadStateQueryParsesWorkspacePathOption(t *testing.T) {
 	q := LoadStateQuery{}
 	t.Setenv("TMUX", "")
