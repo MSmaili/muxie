@@ -34,10 +34,9 @@ func (b *TmuxBackend) Name() string {
 func (b *TmuxBackend) QueryState() (backend.StateResult, error) {
 	result, err := RunQuery(b.client, LoadStateQuery{})
 
-	// tmux exits non-zero when `list-panes -a` runs against an empty (or not-yet-started)
-	// server. The earlier chained `show-options` calls still wrote the indices to stdout,
-	// so a result with no sessions + valid indices parsed is the benign empty-server case.
-	if err != nil && len(result.Sessions) > 0 {
+	// tmux exits non-zero when list-panes runs against an empty server, after the
+	// chained show-options calls have already emitted valid base indexes.
+	if err != nil && !(len(result.Sessions) == 0 && isEmptyServerError(err)) {
 		return backend.StateResult{}, err
 	}
 
@@ -155,6 +154,11 @@ func (b *TmuxBackend) switchTo(target string) error {
 
 func isInsideTmux() bool {
 	return os.Getenv("TMUX") != ""
+}
+
+func isEmptyServerError(err error) bool {
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "no server running") || strings.Contains(message, "no current target")
 }
 
 func findWindowIndex(sessions []Session, sessionName, windowName string) (int, error) {

@@ -31,14 +31,18 @@ func TestQueryStateToleratesEmptyServer(t *testing.T) {
 func TestQueryStatePropagatesRealFailures(t *testing.T) {
 	t.Setenv("TMUX", "")
 
-	// Error with parsed sessions present means something is actually wrong; don't swallow it.
-	b := &TmuxBackend{client: &MockClient{
-		RunFunc: func(args ...string) (string, error) {
-			return "0\n0\n$1|dev|@1|editor|0|layout-a|0|1|%1|0|1|~/code|vim", errors.New("tmux boom")
-		},
-	}}
-	_, err := b.QueryState()
-	assert.Error(t, err)
+	for _, output := range []string{
+		"0\n0",
+		"0\n0\n$1|dev|@1|editor|0|layout-a|0|1|%1|0|1|~/code|vim",
+	} {
+		b := &TmuxBackend{client: &MockClient{
+			RunFunc: func(args ...string) (string, error) {
+				return output, errors.New("permission denied")
+			},
+		}}
+		_, err := b.QueryState()
+		assert.ErrorContains(t, err, "permission denied")
+	}
 }
 
 func TestQueryStatePreservesStableObjectIDsAndPaneIndex(t *testing.T) {
