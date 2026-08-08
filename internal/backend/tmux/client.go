@@ -32,7 +32,10 @@ func (c *client) Run(args ...string) (string, error) {
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
-	output := strings.TrimSpace(out.String())
+	// Return raw output: record boundaries are significant to #{q:...}
+	// parsers, and trailing whitespace may be an escaped value byte. Callers
+	// that expect a single value trim it themselves.
+	output := out.String()
 
 	if err != nil {
 		return output, fmt.Errorf("tmux %v failed: %v (%s)", args, err, stderr.String())

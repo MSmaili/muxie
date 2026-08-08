@@ -33,7 +33,7 @@ func TestQueryStatePropagatesRealFailures(t *testing.T) {
 
 	for _, output := range []string{
 		"0\n0",
-		"0\n0\n$1|dev|@1|editor|0|layout-a|0|1|%1|0|1|~/code|vim",
+		"0\n0\n$1|dev|@1|editor|0|layout-a|0|1|%1|0|1|~/code|vim|",
 	} {
 		b := &TmuxBackend{client: &MockClient{
 			RunFunc: func(args ...string) (string, error) {
@@ -48,7 +48,7 @@ func TestQueryStatePropagatesRealFailures(t *testing.T) {
 func TestQueryStatePreservesStableObjectIDsAndPaneIndex(t *testing.T) {
 	t.Setenv("TMUX", ",,1")
 	b := &TmuxBackend{client: &MockClient{RunFunc: func(args ...string) (string, error) {
-		return "0\n1\n$1|dev|@2|editor|3|layout-a|0|1|%7|4|1|~/code|vim", nil
+		return "0\n1\n$1|dev|@2|editor|3|layout-a|0|1|%7|4|1|~/code|vim|", nil
 	}}}
 
 	result, err := b.QueryState()

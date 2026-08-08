@@ -95,6 +95,7 @@ func TestCreationFollowupsUseReturnedIDsOnNonEmptyBaseOneSession(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, b.Apply([]backend.Action{
 		backend.CreateSessionAction{Name: "dev", WindowName: "editor", Path: t.TempDir()},
+		backend.CreateSessionAction{Name: "personal", WindowName: "shell", Path: t.TempDir()},
 	}))
 
 	live, err := b.QueryState()
@@ -114,6 +115,7 @@ func TestCreationFollowupsUseReturnedIDsOnNonEmptyBaseOneSession(t *testing.T) {
 	require.NoError(t, service.Run(Options{}))
 	after, err := b.QueryState()
 	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"dev", "personal"}, backendSessionNames(after.Sessions), "unrelated session must survive the force matrix on base index 1")
 	dev := findBackendSession(t, after.Sessions, "dev")
 	assert.Len(t, findBackendWindow(t, dev.Windows, "editor").Panes, 1, "split must not target the pre-existing window")
 	server := findBackendWindow(t, dev.Windows, "server")

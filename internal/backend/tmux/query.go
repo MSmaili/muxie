@@ -58,7 +58,7 @@ func (q LoadStateQuery) Args() []string {
 		";", "show-options", "-gv", "base-index",
 		";", "show-options", "-gv", "pane-base-index",
 		";", "list-panes", "-a",
-		"-F", "#{session_id}|#{session_name}|#{window_id}|#{window_name}|#{window_index}|#{window_layout}|#{window_zoomed_flag}|#{window_active}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_current_path}|#{pane_current_command}|#{" + backend.WorkspacePathOption + "}",
+		"-F", "#{session_id}|#{q:session_name}|#{window_id}|#{q:window_name}|#{window_index}|#{window_layout}|#{window_zoomed_flag}|#{window_active}|#{pane_id}|#{pane_index}|#{pane_active}|#{q:pane_current_path}|#{q:pane_current_command}|#{q:" + backend.WorkspacePathOption + "}",
 	}
 }
 
@@ -71,6 +71,13 @@ func (q LoadStateQuery) Parse(output string) (LoadStateResult, error) {
 	builder := newStateBuilder()
 
 	lines := strings.Split(output, "\n")
+	// list-panes terminates every record with '\n' and #{q:...} never escapes
+	// newlines, so exactly one trailing blank line is structural. Any other
+	// blank line means a value contained a newline: fail closed rather than
+	// silently truncating it.
+	if lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
 
 	if len(lines) < 2 {
 		return LoadStateResult{}, fmt.Errorf("tmux state output is missing base indexes")
@@ -86,8 +93,8 @@ func (q LoadStateQuery) Parse(output string) (LoadStateResult, error) {
 	result := LoadStateResult{WindowBaseIndex: windowBaseIndex, PaneBaseIndex: paneBaseIndex}
 
 	for i, line := range lines[2:] {
-		if strings.TrimSpace(line) == "" {
-			continue
+		if line == "" {
+			return LoadStateResult{}, fmt.Errorf("invalid tmux pane row %d: blank line means a value contained a newline", i+1)
 		}
 		p, err := parsePaneLine(line)
 		if err != nil {
@@ -116,85 +123,77 @@ type paneLine struct {
 	workspacePath                                string
 }
 
+// paneFieldCount is the number of '|'-separated fields in one list-panes row
+// of the format string above.
+const paneFieldCount = 14
+
 func parsePaneLine(line string) (paneLine, error) {
-	line = strings.TrimSpace(line)
-	cut := func(field string) (string, error) {
-		value, rest, ok := strings.Cut(line, "|")
-		if !ok {
-			return "", fmt.Errorf("missing %s", field)
-		}
-		line = rest
-		return value, nil
+	fields, err := parseFields(line, paneFieldCount)
+	if err != nil {
+		return paneLine{}, err
 	}
 
-	var p paneLine
-	var err error
-	if p.sessionID, err = cut("session ID"); err != nil {
+	p := paneLine{
+		sessionID:     fields[0],
+		sessionName:   fields[1],
+		windowID:      fields[2],
+		windowName:    fields[3],
+		windowLayout:  fields[5],
+		paneID:        fields[8],
+		panePath:      fields[11],
+		paneCmd:       fields[12],
+		workspacePath: fields[13],
+	}
+	if p.windowIndex, err = parseIndex("window", fields[4]); err != nil {
 		return paneLine{}, err
 	}
-	if p.sessionName, err = cut("session name"); err != nil {
+	if p.windowZoomed, err = parseFlag("window zoom", fields[6]); err != nil {
 		return paneLine{}, err
 	}
-	if p.windowID, err = cut("window ID"); err != nil {
+	if p.windowActive, err = parseFlag("window active", fields[7]); err != nil {
 		return paneLine{}, err
 	}
-	if p.windowName, err = cut("window name"); err != nil {
+	if p.paneIndex, err = parseIndex("pane", fields[9]); err != nil {
 		return paneLine{}, err
 	}
-	windowIndex, err := cut("window index")
-	if err != nil {
-		return paneLine{}, err
-	}
-	if p.windowIndex, err = parseIndex("window", windowIndex); err != nil {
-		return paneLine{}, err
-	}
-	if p.windowLayout, err = cut("window layout"); err != nil {
-		return paneLine{}, err
-	}
-	windowZoomed, err := cut("window zoom flag")
-	if err != nil {
-		return paneLine{}, err
-	}
-	if p.windowZoomed, err = parseFlag("window zoom", windowZoomed); err != nil {
-		return paneLine{}, err
-	}
-	windowActive, err := cut("window active flag")
-	if err != nil {
-		return paneLine{}, err
-	}
-	if p.windowActive, err = parseFlag("window active", windowActive); err != nil {
-		return paneLine{}, err
-	}
-	if p.paneID, err = cut("pane ID"); err != nil {
-		return paneLine{}, err
-	}
-	paneIndex, err := cut("pane index")
-	if err != nil {
-		return paneLine{}, err
-	}
-	if p.paneIndex, err = parseIndex("pane", paneIndex); err != nil {
-		return paneLine{}, err
-	}
-	paneActive, err := cut("pane active flag")
-	if err != nil {
-		return paneLine{}, err
-	}
-	if p.paneActive, err = parseFlag("pane active", paneActive); err != nil {
-		return paneLine{}, err
-	}
-	if p.panePath, err = cut("pane path"); err != nil {
+	if p.paneActive, err = parseFlag("pane active", fields[10]); err != nil {
 		return paneLine{}, err
 	}
 	if !strings.HasPrefix(p.sessionID, "$") || !strings.HasPrefix(p.windowID, "@") || !strings.HasPrefix(p.paneID, "%") {
 		return paneLine{}, fmt.Errorf("invalid object IDs %q, %q, %q", p.sessionID, p.windowID, p.paneID)
 	}
-	if idx := strings.LastIndex(line, "|"); idx >= 0 {
-		p.paneCmd = line[:idx]
-		p.workspacePath = line[idx+1:]
-	} else {
-		p.paneCmd = line
-	}
 	return p, nil
+}
+
+// parseFields splits one row of list-panes output produced with #{q:...}
+// escaping. tmux backslash-escapes metacharacters (including '|'), so a
+// backslash always introduces exactly one literal byte and an unescaped '|'
+// is unambiguously a field separator. Values containing a raw newline cannot
+// be represented: the row splits and parsing fails explicitly instead of
+// inventing state.
+func parseFields(line string, want int) ([]string, error) {
+	fields := make([]string, 0, want)
+	var value strings.Builder
+	for i := 0; i < len(line); i++ {
+		switch line[i] {
+		case '\\':
+			if i+1 == len(line) {
+				return nil, fmt.Errorf("dangling escape in row %q", line)
+			}
+			i++
+			value.WriteByte(line[i])
+		case '|':
+			fields = append(fields, value.String())
+			value.Reset()
+		default:
+			value.WriteByte(line[i])
+		}
+	}
+	fields = append(fields, value.String())
+	if len(fields) != want {
+		return nil, fmt.Errorf("expected %d fields, found %d", want, len(fields))
+	}
+	return fields, nil
 }
 
 func parseIndex(kind, value string) (int, error) {
@@ -242,8 +241,8 @@ func (b *stateBuilder) addPane(p paneLine, currentID string) {
 	}
 
 	sess := b.getOrCreateSession(p.sessionID, p.sessionName)
-	if sess.WorkspacePath == "" && strings.TrimSpace(p.workspacePath) != "" {
-		sess.WorkspacePath = strings.TrimSpace(p.workspacePath)
+	if sess.WorkspacePath == "" && p.workspacePath != "" {
+		sess.WorkspacePath = p.workspacePath
 	}
 	win := b.getOrCreateWindow(sess, p.windowID, p.windowName, p.windowIndex, p.windowLayout, p.panePath)
 	win.Panes = append(win.Panes, Pane{ID: p.paneID, Index: p.paneIndex, Path: p.panePath, Command: p.paneCmd, Zoom: p.windowZoomed && p.paneActive})
