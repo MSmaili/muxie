@@ -180,11 +180,12 @@ func (a *LiveAdapter) snapshotFromBackend(ctx context.Context) (contracts.Snapsh
 		if sessionRef == "" {
 			sessionRef = sess.Name
 		}
+		// Stable refs: names may contain ':' or '.'.
 		sessionNode := contracts.Node{
 			ID:     "session:" + sessionRef,
 			Kind:   contracts.NodeKindSession,
 			Label:  sess.Name,
-			Target: sess.Name,
+			Target: sessionRef,
 			Active: result.Active.Session == sess.Name,
 		}
 		if sessionNode.Active {
@@ -198,7 +199,7 @@ func (a *LiveAdapter) snapshotFromBackend(ctx context.Context) (contracts.Snapsh
 				windowRef = fmt.Sprintf("%d", win.Index)
 				windowNodeID = fmt.Sprintf("window:%s:%s", sess.Name, windowRef)
 			}
-			windowTarget := fmt.Sprintf("%s:%s", sess.Name, windowRef)
+			windowTarget := fmt.Sprintf("%s:%s", sessionRef, windowRef)
 			windowLabel := fmt.Sprintf("%d", win.Index)
 			if win.Name != "" {
 				windowLabel = fmt.Sprintf("%d %s", win.Index, win.Name)

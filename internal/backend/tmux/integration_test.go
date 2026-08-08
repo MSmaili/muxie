@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newIsolatedTmuxBackend redirects a hetki tmux client at a throwaway socket
-// by shadowing tmux on PATH, so the user's default server is never touched.
+// newIsolatedTmuxBackend runs the client against a throwaway socket; the
+// user's default server is never touched.
 func newIsolatedTmuxBackend(t *testing.T) *TmuxBackend {
 	t.Helper()
 	realTmux, err := exec.LookPath("tmux")
@@ -39,16 +39,12 @@ func newIsolatedTmuxBackend(t *testing.T) *TmuxBackend {
 	return b
 }
 
-// TestQueryStateRoundTripsDelimiterAndControlValues proves on a real tmux
-// server that object names and workspace options containing the row
-// delimiter, escapes, and quotes are queried back exactly as tmux stores them.
 func TestQueryStateRoundTripsDelimiterAndControlValues(t *testing.T) {
 	b := newIsolatedTmuxBackend(t)
 
 	sessionName := "dev|ops"
-	// '|' previously corrupted the row; quotes/spaces/Unicode must round-trip
-	// exactly as tmux stores them. (Backslash names get extra escaping when
-	// tmux stores them, so they stay in unit tests and the option value below.)
+	// '|' previously corrupted the row; backslash names get extra tmux
+	// escaping so they stay in unit tests and the option value below.
 	windowName := `edit|"main" 'aux' 日本語`
 	require.NoError(t, b.Apply([]backend.Action{backend.CreateSessionAction{Name: sessionName, WindowName: windowName}}))
 	require.NoError(t, b.client.Execute(SetSessionOption{Session: sessionName, Key: backend.WorkspacePathOption, Value: ` /tmp/ws|path\\1.yaml `}))
@@ -63,9 +59,6 @@ func TestQueryStateRoundTripsDelimiterAndControlValues(t *testing.T) {
 	}
 }
 
-// TestQueryStateFailsClosedOnNewlineValues proves on a real tmux server that
-// values containing a newline make the whole query fail explicitly instead of
-// silently truncating them.
 func TestQueryStateFailsClosedOnNewlineValues(t *testing.T) {
 	for _, value := range []string{"x\n", "a\nb", "\n", "a\n\nb"} {
 		b := newIsolatedTmuxBackend(t)

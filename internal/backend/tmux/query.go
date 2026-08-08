@@ -71,10 +71,8 @@ func (q LoadStateQuery) Parse(output string) (LoadStateResult, error) {
 	builder := newStateBuilder()
 
 	lines := strings.Split(output, "\n")
-	// list-panes terminates every record with '\n' and #{q:...} never escapes
-	// newlines, so exactly one trailing blank line is structural. Any other
-	// blank line means a value contained a newline: fail closed rather than
-	// silently truncating it.
+	// The single trailing blank line is the record terminator; any other
+	// blank line means a value contained a newline.
 	if lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
 	}
@@ -123,8 +121,6 @@ type paneLine struct {
 	workspacePath                                string
 }
 
-// paneFieldCount is the number of '|'-separated fields in one list-panes row
-// of the format string above.
 const paneFieldCount = 14
 
 func parsePaneLine(line string) (paneLine, error) {
@@ -165,12 +161,8 @@ func parsePaneLine(line string) (paneLine, error) {
 	return p, nil
 }
 
-// parseFields splits one row of list-panes output produced with #{q:...}
-// escaping. tmux backslash-escapes metacharacters (including '|'), so a
-// backslash always introduces exactly one literal byte and an unescaped '|'
-// is unambiguously a field separator. Values containing a raw newline cannot
-// be represented: the row splits and parsing fails explicitly instead of
-// inventing state.
+// parseFields splits one #{q:...}-escaped row: a backslash always
+// introduces one literal byte, so an unescaped '|' is unambiguous.
 func parseFields(line string, want int) ([]string, error) {
 	fields := make([]string, 0, want)
 	var value strings.Builder

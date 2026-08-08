@@ -116,9 +116,26 @@ func (b *TmuxBackend) Attach(session string) error {
 }
 
 func (b *TmuxBackend) Switch(target string) error {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return fmt.Errorf("empty switch target")
+	}
 	session, rest, hasWindow := strings.Cut(target, ":")
 	if !hasWindow {
-		return b.switchTo(target)
+		// tmux natively accepts bare $N IDs and names as session targets.
+		return b.switchTo(session)
+	}
+
+	window, paneStr, hasPane := strings.Cut(rest, ".")
+	if session == "" || window == "" {
+		return fmt.Errorf("invalid switch target %q: empty session or window", target)
+	}
+	pane := -1
+	if hasPane {
+		var err error
+		if pane, err = strconv.Atoi(paneStr); err != nil || pane < 0 {
+			return fmt.Errorf("invalid switch target %q: invalid pane index %q", target, paneStr)
+		}
 	}
 
 	state, err := RunQuery(b.client, LoadStateQuery{})
@@ -126,7 +143,14 @@ func (b *TmuxBackend) Switch(target string) error {
 		return err
 	}
 
-	window, paneStr, hasPane := strings.Cut(rest, ".")
+	// Name-form collisions fail closed; ID refs are unambiguous.
+	if !strings.HasPrefix(session, "$") && sessionRefMatchesName(state.Sessions, target) {
+		return fmt.Errorf("ambiguous switch target %q: session name collides with the session:window grammar; use a $ID session or @ID window target", target)
+	}
+	// Same for a window named "logs.0" versus window.pane.
+	if hasPane && windowNameExists(state.Sessions, session, rest) {
+		return fmt.Errorf("ambiguous switch target %q: window name collides with the window.pane grammar; use an @ID window target", target)
+	}
 
 	winIndex, err := resolveWindowIndex(state.Sessions, session, window)
 	if err != nil {
@@ -134,11 +158,7 @@ func (b *TmuxBackend) Switch(target string) error {
 	}
 
 	resolved := fmt.Sprintf("%s:%d", session, winIndex)
-	if hasPane {
-		pane, err := strconv.Atoi(strings.TrimSpace(paneStr))
-		if err != nil || pane < 0 {
-			return fmt.Errorf("invalid pane index %q", paneStr)
-		}
+	if pane >= 0 {
 		resolved = fmt.Sprintf("%s.%d", resolved, pane+state.PaneBaseIndex)
 	}
 
@@ -161,9 +181,41 @@ func isEmptyServerError(err error) bool {
 	return strings.Contains(message, "no server running") || strings.Contains(message, "no current target")
 }
 
-func findWindowIndex(sessions []Session, sessionName, windowName string) (int, error) {
+func sessionRefMatches(s Session, ref string) bool {
+	// '$' refs are IDs only; a session named "$1" cannot shadow.
+	if strings.HasPrefix(ref, "$") {
+		return s.ID == ref
+	}
+	return s.Name == ref
+}
+
+func sessionRefMatchesName(sessions []Session, name string) bool {
 	for _, s := range sessions {
-		if s.Name != sessionName {
+		if s.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func windowNameExists(sessions []Session, sessionRef, name string) bool {
+	for _, s := range sessions {
+		if !sessionRefMatches(s, sessionRef) {
+			continue
+		}
+		for _, w := range s.Windows {
+			if w.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
+func findWindowIndex(sessions []Session, sessionRef, windowName string) (int, error) {
+	for _, s := range sessions {
+		if !sessionRefMatches(s, sessionRef) {
 			continue
 		}
 		index := -1
@@ -172,23 +224,23 @@ func findWindowIndex(sessions []Session, sessionName, windowName string) (int, e
 				continue
 			}
 			if index >= 0 {
-				return 0, fmt.Errorf("window name %q is ambiguous in session %q", windowName, sessionName)
+				return 0, fmt.Errorf("window name %q is ambiguous in session %q", windowName, sessionRef)
 			}
 			index = w.Index
 		}
 		if index >= 0 {
 			return index, nil
 		}
-		return 0, fmt.Errorf("window %q not found in session %q", windowName, sessionName)
+		return 0, fmt.Errorf("window %q not found in session %q", windowName, sessionRef)
 	}
-	return 0, fmt.Errorf("session %q not found", sessionName)
+	return 0, fmt.Errorf("session %q not found", sessionRef)
 }
 
-func resolveWindowIndex(sessions []Session, sessionName, window string) (int, error) {
+func resolveWindowIndex(sessions []Session, sessionRef, window string) (int, error) {
 	window = strings.TrimSpace(window)
 	if strings.HasPrefix(window, "@") {
 		for _, session := range sessions {
-			if session.Name != sessionName {
+			if !sessionRefMatches(session, sessionRef) {
 				continue
 			}
 			for _, candidate := range session.Windows {
@@ -196,22 +248,22 @@ func resolveWindowIndex(sessions []Session, sessionName, window string) (int, er
 					return candidate.Index, nil
 				}
 			}
-			return 0, fmt.Errorf("window ID %q not found in session %q", window, sessionName)
+			return 0, fmt.Errorf("window ID %q not found in session %q", window, sessionRef)
 		}
-		return 0, fmt.Errorf("session %q not found", sessionName)
+		return 0, fmt.Errorf("session %q not found", sessionRef)
 	}
 	if idx, err := strconv.Atoi(window); err == nil {
-		if windowIndexExists(sessions, sessionName, idx) {
+		if windowIndexExists(sessions, sessionRef, idx) {
 			return idx, nil
 		}
-		return 0, fmt.Errorf("window index %d not found in session %q", idx, sessionName)
+		return 0, fmt.Errorf("window index %d not found in session %q", idx, sessionRef)
 	}
-	return findWindowIndex(sessions, sessionName, window)
+	return findWindowIndex(sessions, sessionRef, window)
 }
 
-func windowIndexExists(sessions []Session, sessionName string, index int) bool {
+func windowIndexExists(sessions []Session, sessionRef string, index int) bool {
 	for _, s := range sessions {
-		if s.Name != sessionName {
+		if !sessionRefMatches(s, sessionRef) {
 			continue
 		}
 		for _, w := range s.Windows {

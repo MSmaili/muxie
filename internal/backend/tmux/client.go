@@ -32,9 +32,7 @@ func (c *client) Run(args ...string) (string, error) {
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
-	// Return raw output: record boundaries are significant to #{q:...}
-	// parsers, and trailing whitespace may be an escaped value byte. Callers
-	// that expect a single value trim it themselves.
+	// Raw output: #{q:...} parsers need exact record boundaries.
 	output := out.String()
 
 	if err != nil {

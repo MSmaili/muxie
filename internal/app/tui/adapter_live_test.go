@@ -188,6 +188,7 @@ func TestLiveAdapterLoadBuildsSessionWindowTreeAndCRUDCapabilities(t *testing.T)
 	require.Len(t, snapshot.Nodes[0].Children, 1)
 	assert.Empty(t, snapshot.Nodes[0].Children[0].Children)
 	assert.Equal(t, contracts.NodeKindWindow, snapshot.Nodes[0].Children[0].Kind)
-	assert.Equal(t, "core:@1", snapshot.Nodes[0].Children[0].Target)
+	assert.Equal(t, "$1:@1", snapshot.Nodes[0].Children[0].Target, "targets use stable IDs")
+	assert.Equal(t, "$1", snapshot.Nodes[0].Target)
 	assert.Equal(t, "window:@1", snapshot.ActiveNodeID)
 }
