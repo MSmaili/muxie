@@ -113,7 +113,7 @@ func TestApplyUsesReturnedCreationIDsForFollowups(t *testing.T) {
 		"run new-session -d -s dev -n editor -c ~/code -P -F #{window_id}|#{pane_id}",
 		"run split-window -t @10 -c ~/api -P -F #{pane_id}",
 		"exec select-layout -t @10 tiled",
-		"exec send-keys -t %21 npm test Enter",
+		"exec send-keys -l -t %21 -- npm test ; send-keys -t %21 Enter",
 		"exec resize-pane -Z -t %21",
 		"run new-window -t dev: -n server -c ~/srv -P -F #{window_id}|#{pane_id}",
 		"exec rename-window -t @11 logs",
@@ -132,7 +132,7 @@ func TestDryRunUsesSymbolicCreatedIDsInsteadOfPredictedIndexes(t *testing.T) {
 	assert.Equal(t, []string{
 		"tmux new-session -d -s dev -n editor -P -F #{window_id}|#{pane_id}",
 		"tmux split-window -t <new-window:dev:editor> -c ~/api -P -F #{pane_id}",
-		"tmux send-keys -t <new-pane:dev:editor:1> npm test Enter",
+		"tmux send-keys -l -t <new-pane:dev:editor:1> -- npm test ; send-keys -t <new-pane:dev:editor:1> Enter",
 	}, lines)
 }
 

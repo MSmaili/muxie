@@ -58,7 +58,7 @@ func workspaceFilename(name string) (string, error) {
 		return name + DefaultExt, nil
 	}
 	if !hasValidExt(name) || strings.TrimSuffix(name, ext) == "" {
-		return "", fmt.Errorf("invalid workspace extension %q (use .yaml, .yml, or .json)", ext)
+		return "", fmt.Errorf("invalid workspace extension %q (use .yaml or .yml)", ext)
 	}
 	return name, nil
 }
@@ -73,7 +73,7 @@ func (r *Resolver) LocalPath() (string, error) {
 
 func hasValidExt(name string) bool {
 	ext := filepath.Ext(name)
-	return ext == ".yaml" || ext == ".yml" || ext == ".json"
+	return ext == ".yaml" || ext == ".yml"
 }
 
 func (r *Resolver) isPath(s string) bool {
@@ -99,7 +99,7 @@ func (r *Resolver) findNamedWorkspace(name string) (string, error) {
 	}
 
 	workspacesDir := filepath.Join(configDir, "workspaces")
-	for _, ext := range []string{".yaml", ".yml", ".json"} {
+	for _, ext := range []string{".yaml", ".yml"} {
 		path := filepath.Join(workspacesDir, name+ext)
 		if _, err := os.Stat(path); err == nil {
 			return path, nil
@@ -115,12 +115,12 @@ func (r *Resolver) findLocalWorkspace() (string, error) {
 		return "", err
 	}
 
-	for _, ext := range []string{".yaml", ".yml", ".json"} {
+	for _, ext := range []string{".yaml", ".yml"} {
 		path := filepath.Join(cwd, ".hetki"+ext)
 		if _, err := os.Stat(path); err == nil {
 			return path, nil
 		}
 	}
 
-	return "", fmt.Errorf("no local workspace found (.hetki.{yaml,yml,json})\nHint: Create one with 'hetki save .' or specify a workspace name")
+	return "", fmt.Errorf("no local workspace found (.hetki.{yaml,yml})\nHint: Create one with 'hetki save .' or specify a workspace name")
 }

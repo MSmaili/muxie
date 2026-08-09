@@ -20,7 +20,6 @@ func TestResolverNamedPathAcceptsOneWorkspaceFilename(t *testing.T) {
 		{name: "dev", want: "dev.yaml"},
 		{name: "dev.yaml", want: "dev.yaml"},
 		{name: "dev.yml", want: "dev.yml"},
-		{name: "dev.json", want: "dev.json"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			path, err := resolver.NamedPath(tt.name)
@@ -37,7 +36,7 @@ func TestResolverNamedPathRejectsEscapeReservedAndInvalidNames(t *testing.T) {
 		return t.TempDir(), nil
 	}}
 
-	for _, name := range []string{"", ".", "..", "../dev", "dir/dev", `dir\\dev`, "/tmp/dev", "dev.toml", ".yaml", " dev", "dev ", "dev\nname"} {
+	for _, name := range []string{"", ".", "..", "../dev", "dir/dev", `dir\\dev`, "/tmp/dev", "dev.json", "dev.toml", ".yaml", " dev", "dev ", "dev\nname"} {
 		t.Run(fmt.Sprintf("%q", name), func(t *testing.T) {
 			_, err := resolver.NamedPath(name)
 			assert.Error(t, err)

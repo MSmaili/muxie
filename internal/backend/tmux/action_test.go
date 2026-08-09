@@ -45,7 +45,22 @@ func TestAction_Args(t *testing.T) {
 		{
 			name:   "send keys",
 			action: SendKeys{Target: "dev:editor.0", Keys: "vim"},
-			want:   []string{"send-keys", "-t", "dev:editor.0", "vim", "Enter"},
+			want:   []string{"send-keys", "-l", "-t", "dev:editor.0", "--", "vim", ";", "send-keys", "-t", "dev:editor.0", "Enter"},
+		},
+		{
+			name:   "send keys with leading hyphen",
+			action: SendKeys{Target: "%1", Keys: "-foo bar"},
+			want:   []string{"send-keys", "-l", "-t", "%1", "--", "-foo bar", ";", "send-keys", "-t", "%1", "Enter"},
+		},
+		{
+			name:   "send literal command separator",
+			action: SendKeys{Target: "%1", Keys: ";"},
+			want:   []string{"send-keys", "-l", "-t", "%1", "--", `\;`, ";", "send-keys", "-t", "%1", "Enter"},
+		},
+		{
+			name:   "preserve backslash before command separator",
+			action: SendKeys{Target: "%1", Keys: `\;`},
+			want:   []string{"send-keys", "-l", "-t", "%1", "--", `\\;`, ";", "send-keys", "-t", "%1", "Enter"},
 		},
 		{
 			name:   "kill session",

@@ -39,39 +39,6 @@ func TestLoadYAML(t *testing.T) {
 	assert.Equal(t, "/home/user/code", workspace.Sessions[0].Windows[0].Path)
 }
 
-func TestLoadJSON(t *testing.T) {
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "test.json")
-
-	jsonContent := `{
-  "sessions": [
-    {
-      "name": "myapp",
-      "windows": [
-        {
-          "name": "editor",
-          "path": "/home/user/code",
-          "command": "vim"
-        }
-      ]
-    }
-  ]
-}`
-
-	err := os.WriteFile(configPath, []byte(jsonContent), 0644)
-	require.NoError(t, err)
-
-	loader := NewFileLoader(configPath)
-	workspace, err := loader.Load()
-	require.NoError(t, err)
-
-	assert.NotNil(t, workspace)
-	assert.Len(t, workspace.Sessions, 1)
-	assert.Equal(t, "myapp", workspace.Sessions[0].Name)
-	assert.Len(t, workspace.Sessions[0].Windows, 1)
-	assert.Equal(t, "editor", workspace.Sessions[0].Windows[0].Name)
-}
-
 func TestLoadUnsupportedFormat(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "test.txt")
@@ -103,11 +70,7 @@ func TestLoadYAMLWithPanes(t *testing.T) {
         path: /home/user/code
         panes:
           - command: vim
-            split: vertical
-            size: 50
           - command: npm run dev
-            split: horizontal
-            size: 30
 `
 
 	err := os.WriteFile(configPath, []byte(yamlContent), 0644)
@@ -121,7 +84,33 @@ func TestLoadYAMLWithPanes(t *testing.T) {
 	assert.Len(t, workspace.Sessions[0].Windows, 1)
 	assert.Len(t, workspace.Sessions[0].Windows[0].Panes, 2)
 	assert.Equal(t, "vim", workspace.Sessions[0].Windows[0].Panes[0].Command)
-	assert.Equal(t, "vertical", workspace.Sessions[0].Windows[0].Panes[0].Split)
+	assert.Equal(t, "/home/user/code", workspace.Sessions[0].Windows[0].Panes[1].Path, "panes inherit the window path")
+}
+
+// D2: split and size were accepted-but-ignored historically; they are now
+// rejected with field paths.
+func TestLoadYAMLRejectsUnsupportedPaneFields(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test.yaml")
+
+	yamlContent := `sessions:
+  - name: myapp
+    windows:
+      - name: editor
+        path: /home/user/code
+        panes:
+          - command: vim
+            split: vertical
+            size: 50
+`
+
+	err := os.WriteFile(configPath, []byte(yamlContent), 0644)
+	require.NoError(t, err)
+
+	_, err = NewFileLoader(configPath).Load()
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "panes[0].split: unsupported field")
+	assert.ErrorContains(t, err, "panes[0].size: unsupported field")
 }
 
 func TestLoadYAMLWithSessionRoot(t *testing.T) {
@@ -159,10 +148,10 @@ func TestScanWorkspaces(t *testing.T) {
 
 		paths, err := ScanWorkspaces(tmpDir)
 		require.NoError(t, err)
-		assert.Len(t, paths, 3)
+		assert.Len(t, paths, 2)
 		assert.Contains(t, paths, "project1")
 		assert.Contains(t, paths, "project2")
-		assert.Contains(t, paths, "project3")
+		assert.NotContains(t, paths, "project3")
 	})
 
 	t.Run("returns empty for missing directory", func(t *testing.T) {

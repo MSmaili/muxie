@@ -196,7 +196,11 @@ func readDestination(path string) (destinationSnapshot, error) {
 		}
 		return destinationSnapshot{}, fmt.Errorf("destination changed while opening: %s", path)
 	}
-	data, readErr := io.ReadAll(file)
+	data, readErr := io.ReadAll(io.LimitReader(file, manifest.MaxManifestBytes+1))
+	if len(data) > manifest.MaxManifestBytes {
+		_ = file.Close()
+		return destinationSnapshot{}, fmt.Errorf("destination exceeds %d bytes", manifest.MaxManifestBytes)
+	}
 	readInfo, statErr := file.Stat()
 	closeErr := file.Close()
 	if err := errors.Join(readErr, statErr, closeErr); err != nil {

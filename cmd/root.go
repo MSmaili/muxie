@@ -26,7 +26,7 @@ var rootCmd = &cobra.Command{
 
 It supports:
 - Multiple sessions and windows with panes
-- YAML and JSON configuration files
+- Strict YAML configuration files
 - Named and local workspaces
 - Templates for reusable configurations`,
 	Version: Version,

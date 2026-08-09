@@ -1,5 +1,7 @@
 package tmux
 
+import "strings"
+
 type Action interface {
 	Args() []string
 }
@@ -71,8 +73,14 @@ type SendKeys struct {
 	Keys   string
 }
 
+// Args sends text literally, followed by one interpreted Enter key (D1).
 func (a SendKeys) Args() []string {
-	return []string{"send-keys", "-t", a.Target, a.Keys, "Enter"}
+	keys := a.Keys
+	// A standalone semicolon is tmux command-list syntax even after --.
+	if strings.TrimLeft(keys, `\`) == ";" {
+		keys = `\` + keys
+	}
+	return []string{"send-keys", "-l", "-t", a.Target, "--", keys, ";", "send-keys", "-t", a.Target, "Enter"}
 }
 
 type KillSession struct {

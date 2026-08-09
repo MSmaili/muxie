@@ -123,12 +123,15 @@ func TestServiceRunStampsWorkspacePathWhenPlanIsEmpty(t *testing.T) {
 		require.NoError(t, os.Chdir(previousWD))
 	})
 
+	resolvedDir, err := filepath.EvalSymlinks(tmpDir)
+	require.NoError(t, err)
+
 	stub := &stubBackend{queryResult: backend.StateResult{
 		Sessions: []backend.Session{{
 			Name: "dev",
 			Windows: []backend.Window{{
 				Name: "editor",
-				Path: filepath.ToSlash(tmpDir),
+				Path: filepath.ToSlash(resolvedDir),
 			}},
 		}},
 	}}

@@ -45,10 +45,6 @@ func (l WorkspaceLoader) LoadWorkspace(nameOrPath string) (*manifest.Workspace, 
 		return nil, "", fmt.Errorf("loading workspace: %w", err)
 	}
 
-	if errs := manifest.Validate(workspace); len(errs) > 0 {
-		return nil, "", manifest.ToError(errs)
-	}
-
 	return workspace, workspacePath, nil
 }
 

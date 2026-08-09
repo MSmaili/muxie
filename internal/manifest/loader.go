@@ -1,13 +1,11 @@
 package manifest
 
 import (
-	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 func GetConfigDir() (string, error) {
@@ -32,7 +30,13 @@ func NewFileLoader(path string) *FileLoader {
 
 func (l *FileLoader) Load() (*Workspace, error) {
 	extendedPath := expandPath(l.Path)
-	data, err := os.ReadFile(extendedPath)
+	file, err := os.Open(extendedPath)
+	if err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+	defer file.Close()
+	// Bounded read: the size cap must apply before the file is fully read.
+	data, err := io.ReadAll(io.LimitReader(file, MaxManifestBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
@@ -40,70 +44,55 @@ func (l *FileLoader) Load() (*Workspace, error) {
 	return Parse(data, extendedPath)
 }
 
+// Parse is the single manifest pipeline: bounded read → strict decode →
+// validate with field paths → normalize (first-pane compilation, root/path
+// inheritance). Every consumer (start, list, save verification, TUI) goes
+// through here.
 func Parse(data []byte, path string) (*Workspace, error) {
-	var raw Workspace
-	ext := filepath.Ext(path)
-
-	switch ext {
-	case ".yaml", ".yml":
-		if err := yaml.Unmarshal(data, &raw); err != nil {
-			return nil, fmt.Errorf("parse yaml config: %w", err)
-		}
-	case ".json":
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return nil, fmt.Errorf("parse json config: %w", err)
-		}
-	default:
-		return nil, fmt.Errorf("unsupported config format: %s (use .yaml, .yml, or .json)", ext)
+	if len(data) > MaxManifestBytes {
+		return nil, fmt.Errorf("manifest exceeds %d bytes", MaxManifestBytes)
 	}
 
-	if err := validate(&raw); err != nil {
-		return nil, err
-	}
-	normalized, err := normalize(&raw)
+	raw, err := decodeStrict(data, path)
 	if err != nil {
 		return nil, err
 	}
-	if errs := Validate(normalized); len(errs) > 0 {
+	return prepare(raw)
+}
+
+func prepare(raw *Workspace) (*Workspace, error) {
+	if errs := Validate(raw); len(errs) > 0 {
+		return nil, ToError(errs)
+	}
+	normalized := normalize(raw)
+	if errs := validateNormalized(normalized); len(errs) > 0 {
 		return nil, ToError(errs)
 	}
 	return normalized, nil
 }
 
-func validate(cfg *Workspace) error {
-	if len(cfg.Sessions) == 0 {
-		return fmt.Errorf("sessions block missing or empty")
-	}
-
-	for _, sess := range cfg.Sessions {
-		if sess.Name == "" {
-			return fmt.Errorf("session name cannot be empty")
-		}
-		if len(sess.Windows) == 0 {
-			return fmt.Errorf("session '%s' has no windows", sess.Name)
-		}
-		for _, w := range sess.Windows {
-			if w.Path == "" && sess.Root == "" {
-				return fmt.Errorf("window in session '%s' missing path (no session root defined)", sess.Name)
-			}
-		}
-	}
-
-	return nil
-}
-
-func normalize(cfg *Workspace) (*Workspace, error) {
+// normalize applies root/path inheritance, resolves paths, infers window
+// names, and compiles every window into an explicit first pane carrying the
+// window command. A window's start path always equals its first pane's path;
+// conflicting explicit values are rejected by validateNormalized.
+func normalize(cfg *Workspace) *Workspace {
 	out := &Workspace{Sessions: make([]Session, len(cfg.Sessions))}
 
 	for i, sess := range cfg.Sessions {
-		sess.Root = expandPath(sess.Root)
+		sess.Root = resolvePath(sess.Root)
 		normalized := make([]Window, len(sess.Windows))
 
 		for j, w := range sess.Windows {
+			w.Path = resolvePath(w.Path)
+			if w.Path == "" && len(w.Panes) > 0 {
+				// An explicit first-pane path overrides the inherited session root.
+				w.Path = resolvePath(w.Panes[0].Path)
+			}
 			if w.Path == "" {
 				w.Path = sess.Root
 			}
-			w.Path = expandPath(w.Path)
+			w.Panes = compilePanes(w)
+			w.Command = "" // compiled into the first pane; keep one source of truth
 			if w.Name == "" {
 				w.Name = inferNameFromPath(w.Path)
 			}
@@ -113,15 +102,79 @@ func normalize(cfg *Workspace) (*Workspace, error) {
 		out.Sessions[i] = sess
 	}
 
-	return out, nil
+	return out
+}
+
+func compilePanes(w Window) []Pane {
+	if len(w.Panes) == 0 {
+		return []Pane{{Path: w.Path, Command: w.Command}}
+	}
+	panes := make([]Pane, len(w.Panes))
+	for k, p := range w.Panes {
+		p.Path = resolvePath(p.Path)
+		if p.Path == "" {
+			p.Path = w.Path
+		}
+		if k == 0 && p.Command == "" {
+			p.Command = w.Command
+		}
+		panes[k] = p
+	}
+	return panes
+}
+
+// validateNormalized re-checks values produced by normalization: inferred
+// names and expanded/resolved paths must satisfy the same limits raw input
+// does, and every window's start path must equal its first pane's path so
+// creation and comparison always agree.
+func validateNormalized(ws *Workspace) []ValidationError {
+	var errs []ValidationError
+	for i, sess := range ws.Sessions {
+		sessionAt := fmt.Sprintf("sessions[%d]", i)
+		if len(sess.Root) > MaxPathLength {
+			errs = append(errs, ValidationError{Field: sessionAt + ".root", Message: "resolved session root path is too long"})
+		}
+		if err := checkPath(sess.Root); err != "" {
+			errs = append(errs, ValidationError{Field: sessionAt + ".root", Message: err})
+		}
+		for j, w := range sess.Windows {
+			at := fmt.Sprintf("%s.windows[%d]", sessionAt, j)
+			if w.Name == "" {
+				errs = append(errs, ValidationError{Field: at + ".name", Message: "inferred window name cannot be empty"})
+			} else if len(w.Name) > MaxNameLength {
+				errs = append(errs, ValidationError{Field: at + ".name", Message: nameTooLong("inferred window")})
+			}
+			if err := checkName(w.Name); err != "" {
+				errs = append(errs, ValidationError{Field: at + ".name", Message: err + " (inferred from path)"})
+			}
+			if len(w.Path) > MaxPathLength {
+				errs = append(errs, ValidationError{Field: at + ".path", Message: "resolved window path is too long"})
+			}
+			if err := checkPath(w.Path); err != "" {
+				errs = append(errs, ValidationError{Field: at + ".path", Message: err})
+			}
+			if len(w.Panes) > 0 && w.Panes[0].Path != w.Path {
+				errs = append(errs, ValidationError{Field: at + ".panes[0].path", Message: fmt.Sprintf("first pane path %q conflicts with window path %q; a window starts wherever its first pane starts", w.Panes[0].Path, w.Path)})
+			}
+			for k, pane := range w.Panes {
+				paneAt := fmt.Sprintf("%s.panes[%d].path", at, k)
+				if len(pane.Path) > MaxPathLength {
+					errs = append(errs, ValidationError{Field: paneAt, Message: "resolved pane path is too long"})
+				}
+				if err := checkPath(pane.Path); err != "" {
+					errs = append(errs, ValidationError{Field: paneAt, Message: err})
+				}
+			}
+		}
+	}
+	return errs
 }
 
 func inferNameFromPath(p string) string {
 	if p == "" {
 		return ""
 	}
-	parts := strings.Split(p, "/")
-	return parts[len(parts)-1]
+	return filepath.Base(filepath.Clean(p))
 }
 
 func expandPath(p string) string {
@@ -137,6 +190,21 @@ func expandPath(p string) string {
 	return p
 }
 
+// resolvePath expands and canonicalizes to the physical path so desired
+// paths compare equal to what tmux reports (macOS /var → /private/var etc.).
+func resolvePath(p string) string {
+	p = expandPath(p)
+	if p == "" {
+		return p
+	}
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved
+	}
+	return p
+}
+
+// ScanWorkspaces lists YAML workspaces in dir. For duplicate basename
+// variants, .yaml wins over .yml.
 func ScanWorkspaces(dir string) (map[string]string, error) {
 	expandedDir := expandPath(dir)
 	entries, err := os.ReadDir(expandedDir)
@@ -153,24 +221,14 @@ func ScanWorkspaces(dir string) (map[string]string, error) {
 			continue
 		}
 		name := entry.Name()
-		ext := filepath.Ext(name)
-		if ext == ".yaml" || ext == ".yml" || ext == ".json" {
-			paths[strings.TrimSuffix(name, ext)] = filepath.Join(expandedDir, name)
+		if !hasValidExt(name) {
+			continue
+		}
+		base := strings.TrimSuffix(name, filepath.Ext(name))
+		path := filepath.Join(expandedDir, name)
+		if existing, ok := paths[base]; !ok || extPrecedence(name) < extPrecedence(existing) {
+			paths[base] = path
 		}
 	}
 	return paths, nil
-}
-
-func loadFromMemory(data []byte) (*Workspace, error) {
-	var raw Workspace
-
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("parse config: %w", err)
-	}
-
-	if err := validate(&raw); err != nil {
-		return nil, err
-	}
-
-	return normalize(&raw)
 }

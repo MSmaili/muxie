@@ -43,7 +43,7 @@ func TestValidate(t *testing.T) {
 				Sessions: []Session{},
 			},
 			wantErr:         true,
-			wantErrContains: "no sessions",
+			wantErrContains: "at least one session is required",
 			wantErrCount:    1,
 		},
 		{
@@ -68,7 +68,7 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			wantErr:         true,
-			wantErrContains: "no windows",
+			wantErrContains: "at least one window is required",
 			wantErrCount:    1,
 		},
 		{
@@ -122,7 +122,7 @@ func TestValidate(t *testing.T) {
 						Windows: []Window{
 							{
 								Name: "editor",
-								Path: "/home",
+								Path: "/home/user",
 								Panes: []Pane{
 									{Path: "/home/user", Zoom: true},
 									{Path: "/home/user", Zoom: true},
@@ -145,7 +145,7 @@ func TestValidate(t *testing.T) {
 						Windows: []Window{
 							{
 								Name: "editor",
-								Path: "/home",
+								Path: "/home/user",
 								Panes: []Pane{
 									{Path: "/home/user", Zoom: true},
 									{Path: "/home/user"},

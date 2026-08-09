@@ -38,20 +38,6 @@ func TestWorkspaceLoaderLoadWorkspace(t *testing.T) {
 	assert.Equal(t, "dev", workspace.Sessions[0].Name)
 }
 
-func TestWorkspaceLoaderLoadWorkspaceReturnsValidationError(t *testing.T) {
-	loader := WorkspaceLoader{
-		Resolve: func(string) (string, error) { return "/tmp/dev.yaml", nil },
-		LoadFile: func(string) (*manifest.Workspace, error) {
-			return &manifest.Workspace{Sessions: []manifest.Session{{Name: "dev"}}}, nil
-		},
-	}
-
-	_, _, err := loader.LoadWorkspace("dev")
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "workspace validation failed")
-	assert.ErrorContains(t, err, "has no windows defined")
-}
-
 func TestWorkspaceLoaderLoadWorkspaceWrapsLoaderError(t *testing.T) {
 	loader := WorkspaceLoader{
 		Resolve: func(string) (string, error) { return "/tmp/dev.yaml", nil },

@@ -78,6 +78,22 @@ func TestSaveWorkspacePreservesMalformedDestination(t *testing.T) {
 	assert.Equal(t, before, after)
 }
 
+func TestSaveWorkspaceRejectsOversizedDestination(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workspace.yaml")
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0644)
+	require.NoError(t, err)
+	_, err = file.WriteAt([]byte{1}, manifest.MaxManifestBytes+1)
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+
+	_, err = saveWorkspace(testSaveSessions(), path, false)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "destination exceeds")
+	info, statErr := os.Stat(path)
+	require.NoError(t, statErr)
+	assert.Greater(t, info.Size(), int64(manifest.MaxManifestBytes), "oversized destination must remain untouched")
+}
+
 func TestSaveWorkspaceRejectsFinalSymlink(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target.yaml")
@@ -98,8 +114,8 @@ func TestSaveWorkspaceRejectsFinalSymlink(t *testing.T) {
 }
 
 func TestSaveWorkspaceRejectsWrongFormatAndDirectory(t *testing.T) {
-	t.Run("wrong extension", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "workspace.toml")
+	t.Run("removed JSON format", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "workspace.json")
 		_, err := saveWorkspace(testSaveSessions(), path, false)
 		require.Error(t, err)
 		assert.ErrorContains(t, err, "unsupported format")

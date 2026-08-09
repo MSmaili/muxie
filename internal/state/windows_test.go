@@ -120,6 +120,8 @@ func TestWindowsMatchUsesBestEffortLayoutAndStrictPaneSemantics(t *testing.T) {
 	}))
 	assert.True(t, windowsMatch(&Window{Name: "editor", Path: "~/code", Layout: "tiled", Panes: base.Panes}, &Window{Name: "editor", Path: "~/code", Layout: "2419,80x24,0,0{40x24,0,0,0,39x24,41,0,1}", Panes: base.Panes}))
 	assert.False(t, windowsMatch(&Window{Name: "editor", Path: "~/code", Layout: "2419,80x24,0,0{40x24,0,0,0,39x24,41,0,1}", Panes: base.Panes}, &Window{Name: "editor", Path: "~/code", Layout: "18c3,80x24,0,0{40x24,0,0,0,39x24,41,0,1}", Panes: base.Panes}))
-	assert.False(t, windowsMatch(base, &Window{Name: "editor", Path: "~/code", Layout: "tiled", Panes: []*Pane{{Path: "~/code", Command: "vim"}, {Path: "~/api", Command: "npm run dev", Zoom: true}}}))
-	assert.False(t, windowsMatch(base, &Window{Name: "editor", Path: "~/code", Layout: "tiled", Panes: []*Pane{{Path: "~/code", Command: "vim"}, {Path: "~/api", Command: "npm test"}}}))
+	// D1: command is a creation-time effect and never part of steady-state
+	// equality, so a drifted pane command must not flag the window.
+	assert.True(t, windowsMatch(base, &Window{Name: "editor", Path: "~/code", Layout: "tiled", Panes: []*Pane{{Path: "~/code", Command: "vim"}, {Path: "~/api", Command: "npm run dev", Zoom: true}}}))
+	assert.False(t, windowsMatch(base, &Window{Name: "editor", Path: "~/code", Layout: "tiled", Panes: []*Pane{{Path: "~/code", Command: "vim"}, {Path: "~/api", Command: "npm test"}}}), "zoom difference is still a mismatch")
 }

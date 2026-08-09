@@ -85,8 +85,11 @@ func windowsMatch(desired, actual *Window) bool {
 	return true
 }
 
+// panesMatch compares steady-state pane properties only. Command is a
+// creation-time effect (D1): a running command never makes a pane look
+// drifted, so start/force never re-sends it.
 func panesMatch(desired, actual *Pane) bool {
-	return desired.Path == actual.Path && desired.Command == actual.Command && desired.Zoom == actual.Zoom
+	return desired.Path == actual.Path && desired.Zoom == actual.Zoom
 }
 
 func layoutMatches(desired, actual string) bool {

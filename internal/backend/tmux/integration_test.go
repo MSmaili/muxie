@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/MSmaili/hetki/internal/backend"
 	"github.com/stretchr/testify/assert"
@@ -57,6 +58,23 @@ func TestQueryStateRoundTripsDelimiterAndControlValues(t *testing.T) {
 		assert.Equal(t, windowName, live.Sessions[0].Windows[0].Name)
 		assert.Equal(t, ` /tmp/ws|path\\1.yaml `, live.Sessions[0].WorkspacePath, "workspace path must round-trip byte-exact")
 	}
+}
+
+func TestSendKeysPreservesLiteralCommandSeparator(t *testing.T) {
+	b := newIsolatedTmuxBackend(t)
+	marker := filepath.Join(t.TempDir(), "keys")
+	_, err := b.client.Run("new-session", "-d", "-s", "literal", fmt.Sprintf("cat > %q", marker))
+	require.NoError(t, err)
+	state, err := RunQuery(b.client, LoadStateQuery{})
+	require.NoError(t, err)
+	require.Len(t, state.Sessions, 1)
+	paneID := state.Sessions[0].Windows[0].Panes[0].ID
+
+	require.NoError(t, b.client.Execute(SendKeys{Target: paneID, Keys: ";"}))
+	require.Eventually(t, func() bool {
+		data, err := os.ReadFile(marker)
+		return err == nil && string(data) == ";\n"
+	}, 5*time.Second, 50*time.Millisecond)
 }
 
 func TestQueryStateFailsClosedOnNewlineValues(t *testing.T) {
