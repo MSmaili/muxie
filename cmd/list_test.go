@@ -77,6 +77,24 @@ func TestRunListWorkspaceFormats(t *testing.T) {
 		assert.Equal(t, "alpha:dev\n└── editor\n    ├── 0\n    └── 1\n", output)
 	})
 
+	t.Run("malformed files report errors without hiding valid results", func(t *testing.T) {
+		resetCommandGlobals()
+		home := t.TempDir()
+		workspacesDir := filepath.Join(home, ".config", "hetki", "workspaces")
+		require.NoError(t, os.MkdirAll(workspacesDir, 0755))
+		writeWorkspaceFile(t, workspacesDir, "alpha.yaml", workspaceYAML)
+		brokenPath := writeWorkspaceFile(t, workspacesDir, "broken.yaml", "sessions:\n  - unknown: value\n")
+		t.Setenv("HOME", home)
+
+		listSessions = true
+		var runErr error
+		output := captureStdout(t, func() { runErr = runList(nil, []string{"workspaces"}) })
+
+		assert.Equal(t, "alpha:dev\n", output)
+		require.ErrorContains(t, runErr, `workspace "broken" (`+brokenPath+`): parse yaml config:`)
+		require.ErrorContains(t, runErr, `field unknown not found`)
+	})
+
 	t.Run("json format matches listed workspaces", func(t *testing.T) {
 		resetCommandGlobals()
 		home := t.TempDir()

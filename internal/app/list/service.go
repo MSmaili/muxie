@@ -1,6 +1,7 @@
 package list
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -84,21 +85,23 @@ func (s Service) listWorkspaceFiles(opts Options) (Result, error) {
 	}
 
 	var (
-		g       errgroup.Group
-		mu      sync.Mutex
-		results = make(map[string]*manifest.Workspace)
+		g          errgroup.Group
+		mu         sync.Mutex
+		results    = make(map[string]*manifest.Workspace)
+		loadErrors = make(map[string]error)
 	)
 
 	for _, wname := range names {
 		name, path := wname, paths[wname]
 		g.Go(func() error {
 			ws, err := s.loadWorkspace(path)
+			mu.Lock()
+			defer mu.Unlock()
 			if err != nil {
+				loadErrors[name] = fmt.Errorf("workspace %q (%s): %w", name, path, err)
 				return nil
 			}
-			mu.Lock()
 			results[name] = ws
-			mu.Unlock()
 			return nil
 		})
 	}
@@ -107,16 +110,19 @@ func (s Service) listWorkspaceFiles(opts Options) (Result, error) {
 		return Result{}, err
 	}
 
-	var items []Item
+	var (
+		items    []Item
+		loadErrs []error
+	)
 	for _, name := range names {
-		ws, ok := results[name]
-		if !ok {
+		if err := loadErrors[name]; err != nil {
+			loadErrs = append(loadErrs, err)
 			continue
 		}
-		items = append(items, workspaceToItems(name, ws, opts)...)
+		items = append(items, workspaceToItems(name, results[name], opts)...)
 	}
 
-	return Result{Items: items}, nil
+	return Result{Items: items}, errors.Join(loadErrs...)
 }
 
 func (s Service) listActiveSessions(opts Options) ([]Item, error) {

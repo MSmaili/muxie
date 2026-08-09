@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 
 	applist "github.com/MSmaili/hetki/internal/app/list"
@@ -56,7 +57,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	result, err := applist.NewService(detectBackend).Run(applist.Options{
+	result, listErr := applist.NewService(detectBackend).Run(applist.Options{
 		Mode:            mode,
 		IncludeSessions: listSessions,
 		IncludeWindows:  listWindows,
@@ -64,14 +65,14 @@ func runList(cmd *cobra.Command, args []string) error {
 		CurrentOnly:     listCurrent,
 		Marker:          listMarker,
 	})
-	if err != nil {
-		return err
-	}
 
+	var outputErr error
 	if result.NamesOnly {
-		return outputNames(result.Names)
+		outputErr = outputNames(result.Names)
+	} else {
+		outputErr = outputItems(result.Items)
 	}
-	return outputItems(result.Items)
+	return errors.Join(outputErr, listErr)
 }
 
 func validateListFlags(mode string) error {

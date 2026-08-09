@@ -1,9 +1,11 @@
 package list
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/MSmaili/hetki/internal/backend"
+	"github.com/MSmaili/hetki/internal/manifest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,6 +43,29 @@ func TestServiceRunWorkspacesReturnsSortedNames(t *testing.T) {
 	assert.True(t, result.NamesOnly)
 	assert.Equal(t, []string{"alpha", "zeta"}, result.Names)
 	assert.Empty(t, result.Items)
+}
+
+func TestServiceRunWorkspacesReturnsPartialResultsAndLoadErrors(t *testing.T) {
+	service := Service{
+		GetConfigDir: func() (string, error) { return "/config", nil },
+		ScanWorkspaces: func(string) (map[string]string, error) {
+			return map[string]string{
+				"valid":    "/valid.yaml",
+				"broken-a": "/broken-a.yaml",
+				"broken-b": "/broken-b.yaml",
+			}, nil
+		},
+		LoadWorkspace: func(path string) (*manifest.Workspace, error) {
+			if path != "/valid.yaml" {
+				return nil, errors.New("invalid manifest")
+			}
+			return &manifest.Workspace{Sessions: []manifest.Session{{Name: "dev"}}}, nil
+		},
+	}
+
+	result, err := service.Run(Options{IncludeSessions: true})
+	assert.Equal(t, []Item{{Name: "valid:dev"}}, result.Items)
+	require.EqualError(t, err, "workspace \"broken-a\" (/broken-a.yaml): invalid manifest\nworkspace \"broken-b\" (/broken-b.yaml): invalid manifest")
 }
 
 func TestServiceRunSessionsReturnsWindowAndPaneState(t *testing.T) {
