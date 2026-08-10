@@ -30,7 +30,6 @@ func TestLoadStateQuery(t *testing.T) {
 		output string
 		want   LoadStateResult
 	}{
-		{"empty", "", LoadStateResult{}},
 		{
 			name:   "single session single window single pane",
 			output: "0\n0\n$1|dev|@1|editor|0|layout-a|0|1|%1|0|1|~/code|vim|",
@@ -108,9 +107,14 @@ func TestLoadStateQueryScopesActivePaneToActiveWindow(t *testing.T) {
 func TestLoadStateQueryRejectsMalformedIndexesAndIDs(t *testing.T) {
 	q := LoadStateQuery{}
 	for _, output := range []string{
+		"",
 		"bad\n0",
+		"-1\n0",
+		"0\n-1",
 		"0\n0\n$1|dev|@1|editor|bad|layout|0|1|%1|0|1|~/code|vim|",
-		"0\n0\n$1|dev|bad|editor|0|layout|0|1|%1|0|1|~/code|vim|",
+		"0\n0\n$bad|dev|@1|editor|0|layout|0|1|%1|0|1|~/code|vim|",
+		"0\n0\n$1|dev|@bad|editor|0|layout|0|1|%1|0|1|~/code|vim|",
+		"0\n0\n$1|dev|@1|editor|0|layout|0|1|%bad|0|1|~/code|vim|",
 	} {
 		_, err := q.Parse(output)
 		assert.Error(t, err, output)

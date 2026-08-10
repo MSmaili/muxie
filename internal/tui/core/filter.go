@@ -1,6 +1,10 @@
 package core
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/MSmaili/hetki/internal/tui/contracts"
+)
 
 func (m *model) applyFilter() {
 	query := m.filterQuery()
@@ -18,9 +22,9 @@ func (m *model) applyFilter() {
 // keepMatchesWithAncestors returns matching rows plus the ancestors needed to
 // keep the tree connected, storing each row's score so it is computed once.
 func keepMatchesWithAncestors(rows []row, query string) []row {
-	parentByID := make(map[string]string, len(rows))
-	scoreByID := make(map[string]int, len(rows))
-	keep := make(map[string]bool, len(rows))
+	parentByID := make(map[contracts.NodeID]contracts.NodeID, len(rows))
+	scoreByID := make(map[contracts.NodeID]int, len(rows))
+	keep := make(map[contracts.NodeID]bool, len(rows))
 
 	for _, r := range rows {
 		parentByID[r.Node.ID] = r.Node.ParentID

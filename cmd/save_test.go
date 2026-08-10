@@ -32,7 +32,7 @@ func TestRunSaveWritesCurrentSessionWorkspace(t *testing.T) {
 	savePath = outputPath
 
 	logOutput := captureLoggerOutput(t, func() {
-		require.NoError(t, runSave(nil, nil))
+		require.NoError(t, runSave(saveCmd, nil))
 	})
 
 	assert.Contains(t, logOutput, "Saved to "+outputPath)

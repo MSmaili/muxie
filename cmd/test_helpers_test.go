@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -29,37 +30,40 @@ type stubBackend struct {
 
 func (s *stubBackend) Name() string { return "stub" }
 
-func (s *stubBackend) QueryState() (backend.StateResult, error) {
+func (s *stubBackend) QueryState(context.Context) (backend.StateResult, error) {
 	if s.queryErr != nil {
 		return backend.StateResult{}, s.queryErr
 	}
 	return s.queryResult, nil
 }
 
-func (s *stubBackend) Apply(actions []backend.Action) error {
+func (s *stubBackend) Apply(_ context.Context, actions []backend.Action) error {
 	s.applyCalls++
 	s.lastActions = append([]backend.Action(nil), actions...)
 	return s.applyErr
 }
 
-func (s *stubBackend) DryRun(actions []backend.Action) []string {
+func (s *stubBackend) DryRun(actions []backend.Action) ([]string, error) {
 	s.dryRunCalls++
 	s.lastActions = append([]backend.Action(nil), actions...)
-	return append([]string(nil), s.dryRunLines...)
+	return append([]string(nil), s.dryRunLines...), nil
 }
 
-func (s *stubBackend) Attach(session string) error {
+func (s *stubBackend) Attach(_ context.Context, session string) error {
 	s.attachCalls++
 	s.lastAttach = session
 	return nil
 }
 
-func (s *stubBackend) Switch(target string) error {
+func (s *stubBackend) Switch(_ context.Context, target string) error {
 	s.lastSwitch = target
 	return nil
 }
 
 func resetCommandGlobals() {
+	listCmd.SetContext(context.Background())
+	saveCmd.SetContext(context.Background())
+	startCmd.SetContext(context.Background())
 	dryRun = false
 	force = false
 	listSessions = false

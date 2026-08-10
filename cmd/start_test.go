@@ -30,7 +30,7 @@ func TestRunStartDryRunOutputsPlan(t *testing.T) {
 	dryRun = true
 
 	output := captureLoggerOutput(t, func() {
-		require.NoError(t, runStart(nil, nil))
+		require.NoError(t, runStart(startCmd, nil))
 	})
 
 	assert.Contains(t, output, "Dry run - actions to execute:")
@@ -60,7 +60,7 @@ func TestRunStartFailsWhenBackendStateQueryFails(t *testing.T) {
 	stub := &stubBackend{queryErr: errors.New("query failed")}
 	withStubBackend(t, stub)
 
-	err = runStart(nil, nil)
+	err = runStart(startCmd, nil)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "failed to query backend state: query failed")
 	assert.ErrorContains(t, err, "hetki list sessions")

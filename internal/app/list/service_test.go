@@ -1,6 +1,7 @@
 package list
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -19,17 +20,17 @@ type stubBackend struct {
 
 func (s *stubBackend) Name() string { return "stub" }
 
-func (s *stubBackend) QueryState() (backend.StateResult, error) {
+func (s *stubBackend) QueryState(context.Context) (backend.StateResult, error) {
 	if s.queryErr != nil {
 		return backend.StateResult{}, s.queryErr
 	}
 	return s.queryResult, nil
 }
 
-func (s *stubBackend) Apply(actions []backend.Action) error     { return nil }
-func (s *stubBackend) DryRun(actions []backend.Action) []string { return nil }
-func (s *stubBackend) Attach(session string) error              { return nil }
-func (s *stubBackend) Switch(target string) error               { return nil }
+func (s *stubBackend) Apply(context.Context, []backend.Action) error { return nil }
+func (s *stubBackend) DryRun([]backend.Action) ([]string, error)     { return nil, nil }
+func (s *stubBackend) Attach(context.Context, string) error          { return nil }
+func (s *stubBackend) Switch(context.Context, string) error          { return nil }
 
 func TestServiceRunWorkspacesReturnsSortedNames(t *testing.T) {
 	service := Service{
@@ -40,7 +41,7 @@ func TestServiceRunWorkspacesReturnsSortedNames(t *testing.T) {
 		},
 	}
 
-	result, err := service.Run(Options{})
+	result, err := service.Run(context.Background(), Options{})
 	require.NoError(t, err)
 	assert.True(t, result.NamesOnly)
 	assert.Equal(t, []string{"alpha", "zeta"}, result.Names)
@@ -65,9 +66,24 @@ func TestServiceRunWorkspacesReturnsPartialResultsAndLoadErrors(t *testing.T) {
 		},
 	}
 
-	result, err := service.Run(Options{IncludeSessions: true})
+	result, err := service.Run(context.Background(), Options{IncludeSessions: true})
 	assert.Equal(t, []Item{{Name: "valid:dev"}}, result.Items)
 	require.EqualError(t, err, "workspace \"broken-a\" (/broken-a.yaml): invalid manifest\nworkspace \"broken-b\" (/broken-b.yaml): invalid manifest")
+}
+
+func TestServiceRunWorkspacesReportsCancellationAfterScan(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	service := Service{
+		GetConfigDir: func() (string, error) { return "/config", nil },
+		ScanWorkspaces: func(string) (map[string]string, error) {
+			cancel()
+			return map[string]string{"dev": "/dev.yaml"}, nil
+		},
+	}
+
+	_, err := service.Run(ctx, Options{})
+
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestServiceRunWorkspacesBoundsConcurrentLoads(t *testing.T) {
@@ -99,7 +115,7 @@ func TestServiceRunWorkspacesBoundsConcurrentLoads(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := service.Run(Options{IncludeSessions: true})
+		_, err := service.Run(context.Background(), Options{IncludeSessions: true})
 		done <- err
 	}()
 
@@ -118,7 +134,47 @@ func TestServiceRunWorkspacesBoundsConcurrentLoads(t *testing.T) {
 
 	close(release)
 	released = true
-	require.NoError(t, <-done)
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("workspace listing did not finish")
+	}
+}
+
+func TestServiceRunWorkspacesReportsCancellationAfterActiveLoad(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	service := Service{
+		GetConfigDir:   func() (string, error) { return "/config", nil },
+		ScanWorkspaces: func(string) (map[string]string, error) { return map[string]string{"dev": "/dev.yaml"}, nil },
+		LoadWorkspace: func(string) (*manifest.Workspace, error) {
+			close(started)
+			<-release
+			return &manifest.Workspace{}, nil
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := service.Run(ctx, Options{IncludeSessions: true})
+		done <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("workspace load did not start")
+	}
+
+	cancel()
+	close(release)
+
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("workspace listing did not return after cancellation")
+	}
 }
 
 func TestServiceRunSessionsReturnsWindowAndPaneState(t *testing.T) {
@@ -134,7 +190,7 @@ func TestServiceRunSessionsReturnsWindowAndPaneState(t *testing.T) {
 	}}
 
 	service := NewService(func(...string) (backend.Backend, error) { return stub, nil })
-	result, err := service.Run(Options{Mode: ModeSessions, IncludeWindows: true, IncludePanes: true})
+	result, err := service.Run(context.Background(), Options{Mode: ModeSessions, IncludeWindows: true, IncludePanes: true})
 	require.NoError(t, err)
 	assert.False(t, result.NamesOnly)
 	assert.Equal(t, []Item{{

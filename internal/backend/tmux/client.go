@@ -2,6 +2,8 @@ package tmux
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,8 +11,8 @@ import (
 )
 
 type Client interface {
-	Run(args ...string) (string, error)
-	Execute(action Action) error
+	Run(context.Context, ...string) (string, error)
+	Execute(context.Context, Action) error
 }
 
 type client struct {
@@ -25,8 +27,11 @@ func New() (Client, error) {
 	return &client{bin: bin}, nil
 }
 
-func (c *client) Run(args ...string) (string, error) {
-	cmd := exec.Command(c.bin, args...)
+func (c *client) Run(ctx context.Context, args ...string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	cmd := exec.CommandContext(ctx, c.bin, args...)
 	var out, stderr bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
@@ -36,23 +41,36 @@ func (c *client) Run(args ...string) (string, error) {
 	output := out.String()
 
 	if err != nil {
-		return output, fmt.Errorf("tmux %v failed: %v (%s)", args, err, stderr.String())
+		return output, commandError(fmt.Sprintf("tmux %v", args), err, ctx.Err(), stderr.String())
 	}
 
 	return output, nil
 }
 
-func (c *client) Execute(action Action) error {
-	cmd := exec.Command(c.bin, action.Args()...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
+func (c *client) Execute(ctx context.Context, action Action) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, c.bin, action.Args()...)
+	switch action.(type) {
+	case SwitchClient, AttachSession:
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		if s := strings.TrimSpace(stderr.String()); s != "" {
-			return fmt.Errorf("%s", s)
-		}
-		return err
+		return commandError(fmt.Sprintf("tmux %v", action.Args()), err, ctx.Err(), stderr.String())
 	}
 	return nil
+}
+
+func commandError(operation string, execErr, ctxErr error, stderr string) error {
+	if ctxErr != nil {
+		execErr = errors.Join(ctxErr, execErr)
+	}
+	if detail := strings.TrimSpace(stderr); detail != "" {
+		return fmt.Errorf("%s failed: %w (%s)", operation, execErr, detail)
+	}
+	return fmt.Errorf("%s failed: %w", operation, execErr)
 }

@@ -3,6 +3,7 @@
 package start
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -55,7 +56,7 @@ func TestCommandsExecuteOnceAtCreationTime(t *testing.T) {
 	service := NewService(func(...string) (backend.Backend, error) { return b, nil })
 	service.LoadWorkspace = func(string) (*manifest.Workspace, string, error) { return workspace, "", nil }
 
-	require.NoError(t, service.Run(Options{}))
+	require.NoError(t, service.Run(context.Background(), Options{}))
 
 	deadline := time.Now().Add(10 * time.Second)
 	for {
@@ -71,10 +72,10 @@ func TestCommandsExecuteOnceAtCreationTime(t *testing.T) {
 
 	// Second start: no create actions are planned, so the command is not
 	// re-sent (append marker must stay single-line).
-	second, err := buildPlan(b, workspace, false)
+	second, err := buildPlan(context.Background(), b, workspace, false)
 	require.NoError(t, err)
 	require.True(t, second.IsEmpty(), "second start must plan no actions, got %v", second.Actions)
-	require.NoError(t, service.Run(Options{}))
+	require.NoError(t, service.Run(context.Background(), Options{}))
 	time.Sleep(1 * time.Second)
 	if data, err := os.ReadFile(marker); err == nil {
 		assert.Equal(t, "hetki ; Enter C-c -foo\n", string(data), "second start must not re-send commands")

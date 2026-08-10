@@ -6,7 +6,7 @@ import (
 	"github.com/MSmaili/hetki/internal/tui/contracts"
 )
 
-func findRowIndexByID(rows []row, nodeID string) int {
+func findRowIndexByID(rows []row, nodeID contracts.NodeID) int {
 	if nodeID == "" {
 		return -1
 	}
@@ -18,83 +18,91 @@ func findRowIndexByID(rows []row, nodeID string) int {
 	return -1
 }
 
-func preferredSelectionID(snapshot contracts.Snapshot, intent *contracts.Intent, previousID string) string {
+func preferredSelectionID(snapshot contracts.Snapshot, intent *contracts.Intent, previousID contracts.NodeID, existingNodeIDs map[contracts.NodeID]struct{}) contracts.NodeID {
 	if intent == nil {
 		return previousID
 	}
+	name := strings.TrimSpace(intent.Name)
 	switch intent.Type {
-	case contracts.IntentCreateSession, contracts.IntentRenameSession:
-		name := strings.TrimSpace(intent.Payload["name"])
+	case contracts.IntentCreateSession:
 		if name != "" {
-			return "session:" + name
+			return findSessionNodeIDByName(snapshot.Nodes, name)
 		}
+	case contracts.IntentRenameSession, contracts.IntentRenameWindow:
+		return intent.NodeID
 	case contracts.IntentCreateWindow:
-		session := strings.TrimSpace(intent.Payload["session"])
+		session := strings.TrimSpace(string(intent.Session))
 		if session == "" {
-			session = sessionFromNodeTarget(intent.Target)
+			session = string(sessionFromNodeTarget(intent.Target))
 		}
-		name := strings.TrimSpace(intent.Payload["name"])
 		if session != "" && name != "" {
-			if id := findWindowNodeIDByName(snapshot.Nodes, session, name); id != "" {
+			if id := findWindowNodeIDByName(snapshot.Nodes, session, name, existingNodeIDs); id != "" {
 				return id
 			}
 		}
-	case contracts.IntentRenameWindow:
-		return nodeIDFromTarget(intent.Target)
 	case contracts.IntentDeleteWindow:
-		return "session:" + sessionFromNodeTarget(intent.Target)
+		return intent.ParentNodeID
 	}
 	return previousID
 }
 
-func sessionFromNodeTarget(target string) string {
-	target = strings.TrimSpace(target)
-	if target == "" {
+func sessionFromNodeTarget(target contracts.BackendTarget) contracts.BackendTarget {
+	value := strings.TrimSpace(string(target))
+	if value == "" {
 		return ""
 	}
-	session, _, hasWindow := strings.Cut(target, ":")
+	session, _, hasWindow := strings.Cut(value, ":")
 	if hasWindow {
-		return strings.TrimSpace(session)
+		return contracts.BackendTarget(strings.TrimSpace(session))
 	}
-	return target
+	return contracts.BackendTarget(value)
 }
 
-func nodeIDFromTarget(target string) string {
-	target = strings.TrimSpace(target)
-	if target == "" {
-		return ""
-	}
-	if session, window, ok := sessionWindowFromNodeTarget(target); ok {
-		return "window:" + session + ":" + window
-	}
-	return "session:" + target
-}
-
-func sessionWindowFromNodeTarget(target string) (string, string, bool) {
-	session, rest, hasWindow := strings.Cut(strings.TrimSpace(target), ":")
-	if !hasWindow || session == "" || rest == "" {
-		return "", "", false
-	}
-	window, _, _ := strings.Cut(rest, ".")
-	window = strings.TrimSpace(window)
-	if window == "" {
-		return "", "", false
-	}
-	return strings.TrimSpace(session), window, true
-}
-
-func findWindowNodeIDByName(nodes []contracts.Node, sessionName, windowName string) string {
+func findSessionNodeIDByName(nodes []contracts.Node, name string) contracts.NodeID {
 	for _, session := range nodes {
-		if session.Kind != contracts.NodeKindSession || session.Label != sessionName {
-			continue
-		}
-		for _, window := range session.Children {
-			if windowDisplayName(window.Label) == windowName {
-				return window.ID
-			}
+		if session.Kind == contracts.NodeKindSession && session.Name == name {
+			return session.ID
 		}
 	}
 	return ""
+}
+
+func findWindowNodeIDByName(nodes []contracts.Node, sessionName, windowName string, excluded map[contracts.NodeID]struct{}) contracts.NodeID {
+	var matched *contracts.Node
+	for i := range nodes {
+		if nodes[i].Kind != contracts.NodeKindSession {
+			continue
+		}
+		if string(nodes[i].Target) == sessionName {
+			matched = &nodes[i]
+			break
+		}
+		if matched == nil && nodes[i].Name == sessionName {
+			matched = &nodes[i]
+		}
+	}
+	if matched == nil {
+		return ""
+	}
+	for _, window := range matched.Children {
+		if _, exists := excluded[window.ID]; window.Name == windowName && !exists {
+			return window.ID
+		}
+	}
+	return ""
+}
+
+func collectNodeIDs(nodes []contracts.Node) map[contracts.NodeID]struct{} {
+	ids := make(map[contracts.NodeID]struct{})
+	var collect func([]contracts.Node)
+	collect = func(nodes []contracts.Node) {
+		for _, node := range nodes {
+			ids[node.ID] = struct{}{}
+			collect(node.Children)
+		}
+	}
+	collect(nodes)
+	return ids
 }
 
 func windowDisplayName(label string) string {

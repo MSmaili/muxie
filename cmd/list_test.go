@@ -51,7 +51,7 @@ func TestRunListWorkspaceFormats(t *testing.T) {
 		t.Setenv("HOME", home)
 
 		output := captureStdout(t, func() {
-			require.NoError(t, runList(nil, []string{"workspaces"}))
+			require.NoError(t, runList(listCmd, []string{"workspaces"}))
 		})
 
 		assert.Equal(t, "alpha\nzeta\n", output)
@@ -71,7 +71,7 @@ func TestRunListWorkspaceFormats(t *testing.T) {
 		listFormat = "tree"
 
 		output := captureStdout(t, func() {
-			require.NoError(t, runList(nil, []string{"workspaces"}))
+			require.NoError(t, runList(listCmd, []string{"workspaces"}))
 		})
 
 		assert.Equal(t, "alpha:dev\n└── editor\n    ├── 0\n    └── 1\n", output)
@@ -88,7 +88,7 @@ func TestRunListWorkspaceFormats(t *testing.T) {
 
 		listSessions = true
 		var runErr error
-		output := captureStdout(t, func() { runErr = runList(nil, []string{"workspaces"}) })
+		output := captureStdout(t, func() { runErr = runList(listCmd, []string{"workspaces"}) })
 
 		assert.Equal(t, "alpha:dev\n", output)
 		require.ErrorContains(t, runErr, `workspace "broken" (`+brokenPath+`): parse yaml config:`)
@@ -108,7 +108,7 @@ func TestRunListWorkspaceFormats(t *testing.T) {
 		listFormat = "json"
 
 		output := captureStdout(t, func() {
-			require.NoError(t, runList(nil, []string{"workspaces"}))
+			require.NoError(t, runList(listCmd, []string{"workspaces"}))
 		})
 
 		assert.Equal(t, "[\n  {\n    \"name\": \"alpha:dev\",\n    \"windows\": [\n      {\n        \"name\": \"editor\"\n      }\n    ]\n  }\n]\n", output)

@@ -1,6 +1,7 @@
 package list
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -55,21 +56,24 @@ func NewService(detectBackend func(...string) (backend.Backend, error)) Service 
 	return Service{DetectBackend: detectBackend}
 }
 
-func (s Service) Run(opts Options) (Result, error) {
+func (s Service) Run(ctx context.Context, opts Options) (Result, error) {
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
 	mode := opts.Mode
 	if mode == "" {
 		mode = ModeWorkspaces
 	}
 
 	if mode == ModeSessions {
-		items, err := s.listActiveSessions(opts)
+		items, err := s.listActiveSessions(ctx, opts)
 		return Result{Items: items}, err
 	}
 
-	return s.listWorkspaceFiles(opts)
+	return s.listWorkspaceFiles(ctx, opts)
 }
 
-func (s Service) listWorkspaceFiles(opts Options) (Result, error) {
+func (s Service) listWorkspaceFiles(ctx context.Context, opts Options) (Result, error) {
 	configDir, err := s.getConfigDir()
 	if err != nil {
 		return Result{}, fmt.Errorf("failed to get config directory: %w", err)
@@ -79,14 +83,17 @@ func (s Service) listWorkspaceFiles(opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("failed to scan workspaces: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
 
 	names := sortedKeys(paths)
 	if !opts.IncludeSessions {
 		return Result{NamesOnly: true, Names: names}, nil
 	}
 
+	g, groupCtx := errgroup.WithContext(ctx)
 	var (
-		g          errgroup.Group
 		mu         sync.Mutex
 		results    = make(map[string]*manifest.Workspace)
 		loadErrors = make(map[string]error)
@@ -96,6 +103,9 @@ func (s Service) listWorkspaceFiles(opts Options) (Result, error) {
 	for _, wname := range names {
 		name, path := wname, paths[wname]
 		g.Go(func() error {
+			if err := groupCtx.Err(); err != nil {
+				return err
+			}
 			ws, err := s.loadWorkspace(path)
 			mu.Lock()
 			defer mu.Unlock()
@@ -109,6 +119,9 @@ func (s Service) listWorkspaceFiles(opts Options) (Result, error) {
 	}
 
 	if err := g.Wait(); err != nil {
+		return Result{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
 
@@ -127,13 +140,13 @@ func (s Service) listWorkspaceFiles(opts Options) (Result, error) {
 	return Result{Items: items}, errors.Join(loadErrs...)
 }
 
-func (s Service) listActiveSessions(opts Options) ([]Item, error) {
+func (s Service) listActiveSessions(ctx context.Context, opts Options) ([]Item, error) {
 	b, err := s.detectBackend()
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect backend: %w\nHint: Make sure a supported multiplexer is running", err)
 	}
 
-	result, err := b.QueryState()
+	result, err := b.QueryState(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sessions: %w", err)
 	}

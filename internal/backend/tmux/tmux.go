@@ -1,12 +1,21 @@
 package tmux
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/MSmaili/hetki/internal/backend"
+)
+
+const (
+	queryTimeout    = 5 * time.Second
+	mutationTimeout = 10 * time.Second
 )
 
 type TmuxBackend struct {
@@ -31,12 +40,18 @@ func (b *TmuxBackend) Name() string {
 	return "tmux"
 }
 
-func (b *TmuxBackend) QueryState() (backend.StateResult, error) {
-	result, err := RunQuery(b.client, LoadStateQuery{})
+func (b *TmuxBackend) QueryState(ctx context.Context) (backend.StateResult, error) {
+	if err := ctx.Err(); err != nil {
+		return backend.StateResult{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
+	defer cancel()
+	result, err := RunQuery(ctx, b.client, LoadStateQuery{})
 
 	// tmux exits non-zero when list-panes runs against an empty server, after the
 	// chained show-options calls have already emitted valid base indexes.
-	if err != nil && !(len(result.Sessions) == 0 && isEmptyServerError(err)) {
+	var parseErr *queryParseError
+	if err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.As(err, &parseErr) || len(result.Sessions) != 0 || !isEmptyServerError(err)) {
 		return backend.StateResult{}, err
 	}
 
@@ -86,49 +101,71 @@ func (b *TmuxBackend) QueryState() (backend.StateResult, error) {
 	}, nil
 }
 
-func (b *TmuxBackend) Apply(actions []backend.Action) error {
+func (b *TmuxBackend) Apply(ctx context.Context, actions []backend.Action) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, err := dryRunArgs(actions); err != nil {
+		return err
+	}
 	created := make(map[string]*createdTarget)
 	for i, action := range actions {
-		if action == nil {
-			return fmt.Errorf("action %d is nil", i)
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		if err := action.Validate(); err != nil {
-			return fmt.Errorf("action %d is invalid: %w", i, err)
-		}
-		if err := b.applyAction(action, created); err != nil {
+		actionCtx, cancel := context.WithTimeout(ctx, mutationTimeout)
+		err := b.applyAction(actionCtx, action, created)
+		cancel()
+		if err != nil {
 			return fmt.Errorf("action %d failed: %w", i, err)
 		}
 	}
 	return nil
 }
 
-func (b *TmuxBackend) DryRun(actions []backend.Action) []string {
-	args := dryRunArgs(actions)
+func (b *TmuxBackend) DryRun(actions []backend.Action) ([]string, error) {
+	args, err := dryRunArgs(actions)
+	if err != nil {
+		return nil, err
+	}
 	lines := make([]string, len(args))
 	for i := range args {
 		lines[i] = "tmux " + strings.Join(args[i], " ")
 	}
-	return lines
+	return lines, nil
 }
 
-func (b *TmuxBackend) Attach(session string) error {
-	return b.switchTo(session)
+func (b *TmuxBackend) Attach(ctx context.Context, session string) error {
+	return b.switchTo(ctx, session)
 }
 
-func (b *TmuxBackend) Switch(target string) error {
+func (b *TmuxBackend) Switch(ctx context.Context, target string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	target = strings.TrimSpace(target)
 	if target == "" {
 		return fmt.Errorf("empty switch target")
 	}
 	session, rest, hasWindow := strings.Cut(target, ":")
+	if strings.HasPrefix(session, "$") {
+		if err := validateObjectID("session", session, '$'); err != nil {
+			return err
+		}
+	}
 	if !hasWindow {
 		// tmux natively accepts bare $N IDs and names as session targets.
-		return b.switchTo(session)
+		return b.switchTo(ctx, session)
 	}
 
 	window, paneStr, hasPane := strings.Cut(rest, ".")
 	if session == "" || window == "" {
 		return fmt.Errorf("invalid switch target %q: empty session or window", target)
+	}
+	if strings.HasPrefix(window, "@") {
+		if err := validateObjectID("window", window, '@'); err != nil {
+			return err
+		}
 	}
 	pane := -1
 	if hasPane {
@@ -138,7 +175,9 @@ func (b *TmuxBackend) Switch(target string) error {
 		}
 	}
 
-	state, err := RunQuery(b.client, LoadStateQuery{})
+	queryCtx, cancel := context.WithTimeout(ctx, queryTimeout)
+	defer cancel()
+	state, err := RunQuery(queryCtx, b.client, LoadStateQuery{})
 	if err != nil {
 		return err
 	}
@@ -159,17 +198,20 @@ func (b *TmuxBackend) Switch(target string) error {
 
 	resolved := fmt.Sprintf("%s:%d", session, winIndex)
 	if pane >= 0 {
+		if pane > math.MaxInt-state.PaneBaseIndex {
+			return fmt.Errorf("invalid switch target %q: pane index overflows", target)
+		}
 		resolved = fmt.Sprintf("%s.%d", resolved, pane+state.PaneBaseIndex)
 	}
 
-	return b.switchTo(resolved)
+	return b.switchTo(ctx, resolved)
 }
 
-func (b *TmuxBackend) switchTo(target string) error {
+func (b *TmuxBackend) switchTo(ctx context.Context, target string) error {
 	if isInsideTmux() {
-		return b.client.Execute(SwitchClient{Target: target})
+		return b.client.Execute(ctx, SwitchClient{Target: target})
 	}
-	return b.client.Execute(AttachSession{Target: target})
+	return b.client.Execute(ctx, AttachSession{Target: target})
 }
 
 func isInsideTmux() bool {
@@ -239,6 +281,9 @@ func findWindowIndex(sessions []Session, sessionRef, windowName string) (int, er
 func resolveWindowIndex(sessions []Session, sessionRef, window string) (int, error) {
 	window = strings.TrimSpace(window)
 	if strings.HasPrefix(window, "@") {
+		if err := validateObjectID("window", window, '@'); err != nil {
+			return 0, err
+		}
 		for _, session := range sessions {
 			if !sessionRefMatches(session, sessionRef) {
 				continue
@@ -282,16 +327,16 @@ type createdTarget struct {
 	paneIDs  []string
 }
 
-func (b *TmuxBackend) applyAction(a backend.Action, created map[string]*createdTarget) error {
+func (b *TmuxBackend) applyAction(ctx context.Context, a backend.Action, created map[string]*createdTarget) error {
 	switch action := a.(type) {
 	case backend.CreateSessionAction:
-		target, err := b.createTarget(CreateSession{Name: action.Name, WindowName: action.WindowName, Path: action.Path}, action.WindowName)
+		target, err := b.createTarget(ctx, CreateSession{Name: action.Name, WindowName: action.WindowName, Path: action.Path}, action.WindowName)
 		if err == nil {
 			created[action.Name] = target
 		}
 		return err
 	case backend.CreateWindowAction:
-		target, err := b.createTarget(CreateWindow{Session: action.Session, Name: action.Name, Path: action.Path}, action.Name)
+		target, err := b.createTarget(ctx, CreateWindow{Session: action.Session, Name: action.Name, Path: action.Path}, action.Name)
 		if err == nil {
 			created[action.Session] = target
 		}
@@ -301,13 +346,13 @@ func (b *TmuxBackend) applyAction(a backend.Action, created map[string]*createdT
 		if err != nil {
 			return err
 		}
-		output, err := b.client.Run(printArgs(SplitPane{Target: target.windowID, Path: action.Path}, "#{pane_id}")...)
+		output, err := b.client.Run(ctx, printArgs(SplitPane{Target: target.windowID, Path: action.Path}, "#{pane_id}")...)
 		if err != nil {
 			return err
 		}
 		paneID := strings.TrimSpace(output)
-		if !strings.HasPrefix(paneID, "%") {
-			return fmt.Errorf("tmux returned invalid pane ID %q", paneID)
+		if err := validateObjectID("pane", paneID, '%'); err != nil {
+			return fmt.Errorf("tmux returned %w", err)
 		}
 		target.paneIDs = append(target.paneIDs, paneID)
 		return nil
@@ -316,36 +361,42 @@ func (b *TmuxBackend) applyAction(a backend.Action, created map[string]*createdT
 		if err != nil {
 			return err
 		}
-		return b.client.Execute(SendKeys{Target: paneID, Keys: action.Command})
+		return b.client.Execute(ctx, SendKeys{Target: paneID, Keys: action.Command})
 	case backend.SelectLayoutAction:
 		target, err := followupTarget(created, action.Session, action.Window)
 		if err != nil {
 			return err
 		}
-		return b.client.Execute(SelectLayout{Target: target.windowID, Layout: action.Layout})
+		return b.client.Execute(ctx, SelectLayout{Target: target.windowID, Layout: action.Layout})
 	case backend.ZoomPaneAction:
 		paneID, err := followupPaneID(created, action.Session, action.Window, action.Pane)
 		if err != nil {
 			return err
 		}
-		return b.client.Execute(ZoomPane{Target: paneID})
+		return b.client.Execute(ctx, ZoomPane{Target: paneID})
 	default:
-		tmuxAction := staticAction(a)
-		if tmuxAction == nil {
-			return fmt.Errorf("unsupported backend action %T", a)
+		tmuxAction, err := staticAction(a)
+		if err != nil {
+			return err
 		}
-		return b.client.Execute(tmuxAction)
+		return b.client.Execute(ctx, tmuxAction)
 	}
 }
 
-func (b *TmuxBackend) createTarget(action Action, name string) (*createdTarget, error) {
-	output, err := b.client.Run(printArgs(action, "#{window_id}|#{pane_id}")...)
+func (b *TmuxBackend) createTarget(ctx context.Context, action Action, name string) (*createdTarget, error) {
+	output, err := b.client.Run(ctx, printArgs(action, "#{window_id}|#{pane_id}")...)
 	if err != nil {
 		return nil, err
 	}
 	windowID, paneID, ok := strings.Cut(strings.TrimSpace(output), "|")
-	if !ok || !strings.HasPrefix(windowID, "@") || !strings.HasPrefix(paneID, "%") {
+	if !ok {
 		return nil, fmt.Errorf("tmux returned invalid created target %q", output)
+	}
+	if err := validateObjectID("window", windowID, '@'); err != nil {
+		return nil, fmt.Errorf("tmux returned invalid created target %q: %w", output, err)
+	}
+	if err := validateObjectID("pane", paneID, '%'); err != nil {
+		return nil, fmt.Errorf("tmux returned invalid created target %q: %w", output, err)
 	}
 	return &createdTarget{name: name, windowID: windowID, paneIDs: []string{paneID}}, nil
 }
@@ -373,27 +424,39 @@ func printArgs(action Action, format string) []string {
 	return append(action.Args(), "-P", "-F", format)
 }
 
-func staticAction(a backend.Action) Action {
+func staticAction(a backend.Action) (Action, error) {
 	switch action := a.(type) {
 	case backend.RenameSessionAction:
-		return RenameSession{Target: action.Current, Name: action.New}
+		return RenameSession{Target: action.Current, Name: action.New}, nil
 	case backend.RenameWindowAction:
-		return RenameWindow{Target: action.WindowID, Name: action.New}
+		if err := validateObjectID("window", action.WindowID, '@'); err != nil {
+			return nil, err
+		}
+		return RenameWindow{Target: action.WindowID, Name: action.New}, nil
 	case backend.KillSessionAction:
-		return KillSession{Name: action.Name}
+		return KillSession{Name: action.Name}, nil
 	case backend.KillWindowAction:
-		return KillWindow{Target: action.WindowID}
+		if err := validateObjectID("window", action.WindowID, '@'); err != nil {
+			return nil, err
+		}
+		return KillWindow{Target: action.WindowID}, nil
 	case backend.SetSessionOptionAction:
-		return SetSessionOption{Session: action.Session, Key: action.Key, Value: action.Value}
+		return SetSessionOption{Session: action.Session, Key: action.Key, Value: action.Value}, nil
 	default:
-		return nil
+		return nil, fmt.Errorf("unsupported backend action %T", a)
 	}
 }
 
-func dryRunArgs(actions []backend.Action) [][]string {
+func dryRunArgs(actions []backend.Action) ([][]string, error) {
 	result := make([][]string, 0, len(actions))
 	created := make(map[string]*createdTarget)
-	for _, a := range actions {
+	for i, a := range actions {
+		if a == nil {
+			return nil, fmt.Errorf("action %d is nil", i)
+		}
+		if err := a.Validate(); err != nil {
+			return nil, fmt.Errorf("action %d is invalid: %w", i, err)
+		}
 		switch action := a.(type) {
 		case backend.CreateSessionAction:
 			result = append(result, printArgs(CreateSession{Name: action.Name, WindowName: action.WindowName, Path: action.Path}, "#{window_id}|#{pane_id}"))
@@ -404,29 +467,37 @@ func dryRunArgs(actions []backend.Action) [][]string {
 		case backend.SplitPaneAction:
 			target, err := followupTarget(created, action.Session, action.Window)
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("action %d: %w", i, err)
 			}
 			result = append(result, printArgs(SplitPane{Target: target.windowID, Path: action.Path}, "#{pane_id}"))
 			target.paneIDs = append(target.paneIDs, fmt.Sprintf("<new-pane:%s:%s:%d>", action.Session, action.Window, len(target.paneIDs)))
 		case backend.SendKeysAction:
-			if paneID, err := followupPaneID(created, action.Session, action.Window, action.Pane); err == nil {
-				result = append(result, SendKeys{Target: paneID, Keys: action.Command}.Args())
+			paneID, err := followupPaneID(created, action.Session, action.Window, action.Pane)
+			if err != nil {
+				return nil, fmt.Errorf("action %d: %w", i, err)
 			}
+			result = append(result, SendKeys{Target: paneID, Keys: action.Command}.Args())
 		case backend.SelectLayoutAction:
-			if target, err := followupTarget(created, action.Session, action.Window); err == nil {
-				result = append(result, SelectLayout{Target: target.windowID, Layout: action.Layout}.Args())
+			target, err := followupTarget(created, action.Session, action.Window)
+			if err != nil {
+				return nil, fmt.Errorf("action %d: %w", i, err)
 			}
+			result = append(result, SelectLayout{Target: target.windowID, Layout: action.Layout}.Args())
 		case backend.ZoomPaneAction:
-			if paneID, err := followupPaneID(created, action.Session, action.Window, action.Pane); err == nil {
-				result = append(result, ZoomPane{Target: paneID}.Args())
+			paneID, err := followupPaneID(created, action.Session, action.Window, action.Pane)
+			if err != nil {
+				return nil, fmt.Errorf("action %d: %w", i, err)
 			}
+			result = append(result, ZoomPane{Target: paneID}.Args())
 		default:
-			if tmuxAction := staticAction(a); tmuxAction != nil {
-				result = append(result, tmuxAction.Args())
+			tmuxAction, err := staticAction(a)
+			if err != nil {
+				return nil, fmt.Errorf("action %d: %w", i, err)
 			}
+			result = append(result, tmuxAction.Args())
 		}
 	}
-	return result
+	return result, nil
 }
 
 func dryRunTarget(session, window string) *createdTarget {

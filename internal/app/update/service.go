@@ -2,6 +2,7 @@ package update
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/MSmaili/hetki/internal/logger"
@@ -36,7 +38,7 @@ type Options struct {
 
 type Updater interface {
 	Name() string
-	Update(latestVersion string) error
+	Update(context.Context, string) error
 	DryRun()
 }
 
@@ -44,14 +46,17 @@ type Service struct {
 	SetVerbose       func(bool)
 	Executable       func() (string, error)
 	DetermineUpdater func(string) (Updater, error)
-	GetLatestVersion func() (string, error)
+	GetLatestVersion func(context.Context) (string, error)
 }
 
 func NewService() Service {
 	return Service{}
 }
 
-func (s Service) Run(opts Options) error {
+func (s Service) Run(ctx context.Context, opts Options) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	s.setVerbose(opts.Verbose)
 
 	exePath, err := s.executable()
@@ -72,8 +77,11 @@ func (s Service) Run(opts Options) error {
 		return nil
 	}
 
-	latestVersion, err := s.getLatestVersion()
+	latestVersion, err := s.getLatestVersion(ctx)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		logger.Debug("Could not check latest version: %v", err)
 		logger.Info("Could not check latest version, proceeding with update")
 	} else if opts.CurrentVersion != "dev" && latestVersion == opts.CurrentVersion {
@@ -86,7 +94,7 @@ func (s Service) Run(opts Options) error {
 		logger.Info("Latest version: %s", latestVersion)
 	}
 
-	if err := updater.Update(latestVersion); err != nil {
+	if err := updater.Update(ctx, latestVersion); err != nil {
 		return fmt.Errorf("update failed: %w", err)
 	}
 
@@ -116,18 +124,22 @@ func (s Service) determineUpdater(exePath string, opts Options) (Updater, error)
 	return DetermineUpdater(exePath, opts)
 }
 
-func (s Service) getLatestVersion() (string, error) {
+func (s Service) getLatestVersion(ctx context.Context) (string, error) {
 	if s.GetLatestVersion != nil {
-		return s.GetLatestVersion()
+		return s.GetLatestVersion(ctx)
 	}
-	return GetLatestVersion()
+	return GetLatestVersion(ctx)
 }
 
-func GetLatestVersion() (string, error) {
+func GetLatestVersion(ctx context.Context) (string, error) {
 	url := githubAPIURL + githubRepo + "/releases/latest"
 
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(url)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -193,7 +205,7 @@ func (g *GoUpdater) DryRun() {
 	logger.Info("Would run: go install %s", module)
 }
 
-func (g *GoUpdater) Update(_ string) error {
+func (g *GoUpdater) Update(ctx context.Context, _ string) error {
 	if _, err := exec.LookPath("go"); err != nil {
 		return errors.New("go binary not found in PATH")
 	}
@@ -216,11 +228,23 @@ func (g *GoUpdater) Update(_ string) error {
 
 	logger.Debug("Running command: go %s", strings.Join(args, " "))
 
-	cmd := exec.Command("go", args...)
+	cmd := exec.CommandContext(ctx, "go", args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	return cmd.Run()
+	err := cmd.Run()
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return errors.Join(ctxErr, err)
+	}
+	return err
 }
 
 type BinaryUpdater struct {
@@ -241,10 +265,10 @@ func (b *BinaryUpdater) DryRun() {
 	}
 }
 
-func (b *BinaryUpdater) Update(latestVersion string) error {
+func (b *BinaryUpdater) Update(ctx context.Context, latestVersion string) error {
 	if b.FromSource {
 		logger.Info("--source flag set, falling back to go install...")
-		return (&GoUpdater{FromSource: true}).Update(latestVersion)
+		return (&GoUpdater{FromSource: true}).Update(ctx, latestVersion)
 	}
 
 	if latestVersion == "" {
@@ -264,7 +288,7 @@ func (b *BinaryUpdater) Update(latestVersion string) error {
 	tempPath := tempFile.Name()
 	defer os.Remove(tempPath)
 
-	if err := downloadToFile(downloadURL, tempFile); err != nil {
+	if err := downloadToFile(ctx, downloadURL, tempFile); err != nil {
 		return fmt.Errorf("failed to download binary: %w", err)
 	}
 
@@ -276,10 +300,13 @@ func (b *BinaryUpdater) Update(latestVersion string) error {
 		return fmt.Errorf("downloaded file is too small (%d bytes), expected a Go binary (>1MB)", info.Size())
 	}
 
-	if err := verifyBinaryChecksum(checksumsURL, tempPath, binaryName); err != nil {
+	if err := verifyBinaryChecksum(ctx, checksumsURL, tempPath, binaryName); err != nil {
 		return fmt.Errorf("checksum verification failed: %w", err)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := os.Chmod(tempPath, 0755); err != nil {
 		return fmt.Errorf("failed to set permissions: %w", err)
 	}
@@ -291,9 +318,15 @@ func (b *BinaryUpdater) Update(latestVersion string) error {
 	return nil
 }
 
-func downloadToFile(url string, f *os.File) error {
+func downloadToFile(ctx context.Context, url string, f *os.File) (err error) {
+	defer func() { err = errors.Join(err, f.Close()) }()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
 	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Get(url)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -303,18 +336,19 @@ func downloadToFile(url string, f *os.File) error {
 		return fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
 	}
 
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		return err
-	}
-
-	return f.Close()
+	_, err = io.Copy(f, resp.Body)
+	return err
 }
 
-func verifyBinaryChecksum(checksumsURL, filePath, binaryName string) error {
+func verifyBinaryChecksum(ctx context.Context, checksumsURL, filePath, binaryName string) error {
 	logger.Info("Verifying checksum...")
 
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, checksumsURL, nil)
+	if err != nil {
+		return err
+	}
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(checksumsURL)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to download checksums: %w", err)
 	}
@@ -348,7 +382,7 @@ func verifyBinaryChecksum(checksumsURL, filePath, binaryName string) error {
 	defer f.Close()
 
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	if _, err := io.Copy(h, contextReader{ctx: ctx, reader: f}); err != nil {
 		return fmt.Errorf("failed to compute hash: %w", err)
 	}
 
@@ -359,6 +393,22 @@ func verifyBinaryChecksum(checksumsURL, filePath, binaryName string) error {
 
 	logger.Info("Checksum verified: %s", actualHash)
 	return nil
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r contextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	n, err := r.reader.Read(p)
+	if ctxErr := r.ctx.Err(); ctxErr != nil {
+		return n, ctxErr
+	}
+	return n, err
 }
 
 func installedViaGo(exePath string) bool {

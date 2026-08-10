@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/MSmaili/hetki/internal/backend"
 	"github.com/MSmaili/hetki/internal/logger"
@@ -36,8 +39,15 @@ func init() {
 	rootCmd.SetVersionTemplate(fmt.Sprintf("hetki version %s\ncommit: %s\nbuilt: %s\n", Version, GitCommit, BuildDate))
 }
 
+func commandSignalContext() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+}
+
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
+	ctx, stop := commandSignalContext()
+	err := rootCmd.ExecuteContext(ctx)
+	stop()
+	if err != nil {
 		logger.Error("%v", err)
 		os.Exit(1)
 	}

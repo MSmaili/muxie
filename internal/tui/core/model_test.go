@@ -65,7 +65,7 @@ func TestWorkspaceContextUsesFriendlyWorkspaceLabel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := workspaceContext(map[string]string{"workspace": tt.workspace})
+			got := workspaceContext(tt.workspace)
 			if got != tt.want {
 				t.Fatalf("workspaceContext() = %q, want %q", got, tt.want)
 			}

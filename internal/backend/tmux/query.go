@@ -1,6 +1,8 @@
 package tmux
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -15,12 +17,17 @@ type Query[T any] interface {
 	Parse(output string) (T, error)
 }
 
-func RunQuery[T any](c Client, q Query[T]) (T, error) {
-	output, err := c.Run(q.Args()...)
+type queryParseError struct{ err error }
+
+func (e *queryParseError) Error() string { return e.err.Error() }
+func (e *queryParseError) Unwrap() error { return e.err }
+
+func RunQuery[T any](ctx context.Context, c Client, q Query[T]) (T, error) {
+	output, err := c.Run(ctx, q.Args()...)
 	result, parseErr := q.Parse(output)
 	if parseErr != nil {
 		var zero T
-		return zero, parseErr
+		return zero, errors.Join(err, &queryParseError{err: parseErr})
 	}
 	return result, err
 }
@@ -63,10 +70,6 @@ func (q LoadStateQuery) Args() []string {
 }
 
 func (q LoadStateQuery) Parse(output string) (LoadStateResult, error) {
-	if output == "" {
-		return LoadStateResult{}, nil
-	}
-
 	currentID := getCurrentSessionID()
 	builder := newStateBuilder()
 
@@ -80,13 +83,13 @@ func (q LoadStateQuery) Parse(output string) (LoadStateResult, error) {
 	if len(lines) < 2 {
 		return LoadStateResult{}, fmt.Errorf("tmux state output is missing base indexes")
 	}
-	windowBaseIndex, err := strconv.Atoi(strings.TrimSpace(lines[0]))
+	windowBaseIndex, err := parseIndex("window base", lines[0])
 	if err != nil {
-		return LoadStateResult{}, fmt.Errorf("invalid window base index %q: %w", lines[0], err)
+		return LoadStateResult{}, err
 	}
-	paneBaseIndex, err := strconv.Atoi(strings.TrimSpace(lines[1]))
+	paneBaseIndex, err := parseIndex("pane base", lines[1])
 	if err != nil {
-		return LoadStateResult{}, fmt.Errorf("invalid pane base index %q: %w", lines[1], err)
+		return LoadStateResult{}, err
 	}
 	result := LoadStateResult{WindowBaseIndex: windowBaseIndex, PaneBaseIndex: paneBaseIndex}
 
@@ -155,8 +158,14 @@ func parsePaneLine(line string) (paneLine, error) {
 	if p.paneActive, err = parseFlag("pane active", fields[10]); err != nil {
 		return paneLine{}, err
 	}
-	if !strings.HasPrefix(p.sessionID, "$") || !strings.HasPrefix(p.windowID, "@") || !strings.HasPrefix(p.paneID, "%") {
-		return paneLine{}, fmt.Errorf("invalid object IDs %q, %q, %q", p.sessionID, p.windowID, p.paneID)
+	if err := validateObjectID("session", p.sessionID, '$'); err != nil {
+		return paneLine{}, err
+	}
+	if err := validateObjectID("window", p.windowID, '@'); err != nil {
+		return paneLine{}, err
+	}
+	if err := validateObjectID("pane", p.paneID, '%'); err != nil {
+		return paneLine{}, err
 	}
 	return p, nil
 }
@@ -194,6 +203,17 @@ func parseIndex(kind, value string) (int, error) {
 		return 0, fmt.Errorf("invalid %s index %q", kind, value)
 	}
 	return index, nil
+}
+
+func validateObjectID(kind, value string, prefix byte) error {
+	if len(value) < 2 || value[0] != prefix {
+		return fmt.Errorf("invalid %s ID %q", kind, value)
+	}
+	number, err := strconv.Atoi(value[1:])
+	if err != nil || number < 0 || strconv.Itoa(number) != value[1:] {
+		return fmt.Errorf("invalid %s ID %q", kind, value)
+	}
+	return nil
 }
 
 func parseFlag(kind, value string) (bool, error) {

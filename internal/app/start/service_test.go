@@ -2,6 +2,7 @@ package start
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -31,14 +32,14 @@ type stubBackend struct {
 
 func (s *stubBackend) Name() string { return "stub" }
 
-func (s *stubBackend) QueryState() (backend.StateResult, error) {
+func (s *stubBackend) QueryState(context.Context) (backend.StateResult, error) {
 	if s.queryErr != nil {
 		return backend.StateResult{}, s.queryErr
 	}
 	return s.queryResult, nil
 }
 
-func (s *stubBackend) Apply(actions []backend.Action) error {
+func (s *stubBackend) Apply(_ context.Context, actions []backend.Action) error {
 	s.applyCalls++
 	copied := append([]backend.Action(nil), actions...)
 	s.lastActions = copied
@@ -46,18 +47,38 @@ func (s *stubBackend) Apply(actions []backend.Action) error {
 	return s.applyErr
 }
 
-func (s *stubBackend) DryRun(actions []backend.Action) []string {
+func (s *stubBackend) DryRun(actions []backend.Action) ([]string, error) {
 	s.dryRunCalls++
 	s.lastActions = append([]backend.Action(nil), actions...)
-	return append([]string(nil), s.dryRunLines...)
+	return append([]string(nil), s.dryRunLines...), nil
 }
 
-func (s *stubBackend) Attach(session string) error {
+func (s *stubBackend) Attach(context.Context, string) error {
 	s.attachCalls++
 	return nil
 }
 
-func (s *stubBackend) Switch(target string) error { return nil }
+func (s *stubBackend) Switch(context.Context, string) error { return nil }
+
+func TestServiceRunCancellationAfterLoadPreventsBackendDetection(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	detected := false
+	service := Service{
+		LoadWorkspace: func(string) (*manifest.Workspace, string, error) {
+			cancel()
+			return &manifest.Workspace{}, "", nil
+		},
+		DetectBackend: func(...string) (backend.Backend, error) {
+			detected = true
+			return &stubBackend{}, nil
+		},
+	}
+
+	err := service.Run(ctx, Options{})
+
+	require.ErrorIs(t, err, context.Canceled)
+	assert.False(t, detected)
+}
 
 func TestServiceRunDryRunOutputsPlan(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -75,7 +96,7 @@ func TestServiceRunDryRunOutputsPlan(t *testing.T) {
 	service := NewService(func(...string) (backend.Backend, error) { return stub, nil })
 
 	output := captureLoggerOutput(t, func() {
-		require.NoError(t, service.Run(Options{DryRun: true}))
+		require.NoError(t, service.Run(context.Background(), Options{DryRun: true}))
 	})
 
 	assert.Contains(t, output, "Dry run - actions to execute:")
@@ -103,7 +124,7 @@ func TestServiceRunFailsWhenBackendStateQueryFails(t *testing.T) {
 	stub := &stubBackend{queryErr: errors.New("query failed")}
 	service := NewService(func(...string) (backend.Backend, error) { return stub, nil })
 
-	err = service.Run(Options{})
+	err = service.Run(context.Background(), Options{})
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "failed to query backend state: query failed")
 	assert.ErrorContains(t, err, "hetki list sessions")
@@ -137,7 +158,7 @@ func TestServiceRunStampsWorkspacePathWhenPlanIsEmpty(t *testing.T) {
 	}}
 	service := NewService(func(...string) (backend.Backend, error) { return stub, nil })
 
-	require.NoError(t, service.Run(Options{}))
+	require.NoError(t, service.Run(context.Background(), Options{}))
 	assert.Equal(t, 1, stub.applyCalls)
 	assert.Equal(t, 1, stub.attachCalls)
 	expectedPath, err := canonicalPath(filepath.Join(tmpDir, ".hetki.yaml"))
@@ -181,7 +202,7 @@ func TestServiceRunColdStartAppliesCreateActions(t *testing.T) {
 	stub := &stubBackend{queryResult: backend.StateResult{}}
 	service := NewService(func(...string) (backend.Backend, error) { return stub, nil })
 
-	require.NoError(t, service.Run(Options{}))
+	require.NoError(t, service.Run(context.Background(), Options{}))
 
 	// Two Apply calls: first the plan, second the workspace-path metadata stamp.
 	require.Equal(t, 2, stub.applyCalls)
@@ -224,7 +245,7 @@ func TestServiceRunForcePreservesUnrelatedSessionsInNormalAndDryRun(t *testing.T
 			service := NewService(func(...string) (backend.Backend, error) { return stub, nil })
 			service.LoadWorkspace = func(string) (*manifest.Workspace, string, error) { return workspace, "", nil }
 
-			require.NoError(t, service.Run(Options{Force: true, DryRun: dryRun}))
+			require.NoError(t, service.Run(context.Background(), Options{Force: true, DryRun: dryRun}))
 			assert.Equal(t, want, stub.lastActions)
 			for _, action := range stub.lastActions {
 				_, killsSession := action.(backend.KillSessionAction)
@@ -243,6 +264,16 @@ func TestServiceRunForcePreservesUnrelatedSessionsInNormalAndDryRun(t *testing.T
 	}
 }
 
+type unsupportedPlanAction struct{}
+
+func (unsupportedPlanAction) Comment() string { return "unsupported" }
+func (unsupportedPlanAction) Validate() error { return nil }
+
+func TestToBackendActionsRejectsUnsupportedActions(t *testing.T) {
+	_, err := toBackendActions([]plan.Action{unsupportedPlanAction{}})
+	require.ErrorContains(t, err, "unsupported plan action")
+}
+
 func TestToBackendActionsMapsPlannerActions(t *testing.T) {
 	actions := []plan.Action{
 		plan.CreateSessionAction{Name: "dev", WindowName: "editor", Path: "~/code"},
@@ -255,6 +286,8 @@ func TestToBackendActionsMapsPlannerActions(t *testing.T) {
 		plan.KillWindowAction{Session: "dev", Window: "old-window", WindowID: "@7"},
 	}
 
+	converted, err := toBackendActions(actions)
+	require.NoError(t, err)
 	assert.Equal(t, []backend.Action{
 		backend.CreateSessionAction{Name: "dev", WindowName: "editor", Path: "~/code"},
 		backend.CreateWindowAction{Session: "dev", Name: "server", Path: "~/api"},
@@ -264,7 +297,7 @@ func TestToBackendActionsMapsPlannerActions(t *testing.T) {
 		backend.ZoomPaneAction{Session: "dev", Window: "server", Pane: 1},
 		backend.KillSessionAction{Name: "old"},
 		backend.KillWindowAction{Session: "dev", Window: "old-window", WindowID: "@7"},
-	}, toBackendActions(actions))
+	}, converted)
 }
 
 func captureLoggerOutput(t *testing.T, fn func()) string {

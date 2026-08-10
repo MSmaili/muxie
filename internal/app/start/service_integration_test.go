@@ -3,6 +3,7 @@
 package start
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -38,14 +39,14 @@ func TestForceKeepsUnrelatedSessionOnIsolatedTmux(t *testing.T) {
 	b, err := backendtmux.NewBackend()
 	require.NoError(t, err)
 	keepPath, removePath := t.TempDir(), t.TempDir()
-	require.NoError(t, b.Apply([]backend.Action{
+	require.NoError(t, b.Apply(context.Background(), []backend.Action{
 		backend.CreateSessionAction{Name: "dev", WindowName: "editor", Path: t.TempDir()},
 		backend.CreateWindowAction{Session: "dev", Name: "scratch", Path: keepPath},
 		backend.CreateWindowAction{Session: "dev", Name: "scratch", Path: removePath},
 		backend.CreateSessionAction{Name: "personal", WindowName: "shell", Path: t.TempDir()},
 	}))
 
-	live, err := b.QueryState()
+	live, err := b.QueryState(context.Background())
 	require.NoError(t, err)
 	dev := findBackendSession(t, live.Sessions, "dev")
 	editor := findBackendWindow(t, dev.Windows, "editor")
@@ -60,8 +61,8 @@ func TestForceKeepsUnrelatedSessionOnIsolatedTmux(t *testing.T) {
 	service := NewService(func(...string) (backend.Backend, error) { return b, nil })
 	service.LoadWorkspace = func(string) (*manifest.Workspace, string, error) { return workspace, "", nil }
 
-	require.NoError(t, service.Run(Options{Force: true}))
-	after, err := b.QueryState()
+	require.NoError(t, service.Run(context.Background(), Options{Force: true}))
+	after, err := b.QueryState(context.Background())
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"dev", "personal"}, backendSessionNames(after.Sessions))
 	devAfter := findBackendSession(t, after.Sessions, "dev")
@@ -93,12 +94,12 @@ func TestCreationFollowupsUseReturnedIDsOnNonEmptyBaseOneSession(t *testing.T) {
 	require.NoError(t, exec.Command(realTmux, "-S", socket, "start-server", ";", "set-option", "-g", "base-index", "1", ";", "set-option", "-g", "pane-base-index", "1").Run())
 	b, err := backendtmux.NewBackend()
 	require.NoError(t, err)
-	require.NoError(t, b.Apply([]backend.Action{
+	require.NoError(t, b.Apply(context.Background(), []backend.Action{
 		backend.CreateSessionAction{Name: "dev", WindowName: "editor", Path: t.TempDir()},
 		backend.CreateSessionAction{Name: "personal", WindowName: "shell", Path: t.TempDir()},
 	}))
 
-	live, err := b.QueryState()
+	live, err := b.QueryState(context.Background())
 	require.NoError(t, err)
 	editor := findBackendWindow(t, findBackendSession(t, live.Sessions, "dev").Windows, "editor")
 	serverPath, secondPanePath := t.TempDir(), t.TempDir()
@@ -112,8 +113,8 @@ func TestCreationFollowupsUseReturnedIDsOnNonEmptyBaseOneSession(t *testing.T) {
 	service := NewService(func(...string) (backend.Backend, error) { return b, nil })
 	service.LoadWorkspace = func(string) (*manifest.Workspace, string, error) { return workspace, "", nil }
 
-	require.NoError(t, service.Run(Options{}))
-	after, err := b.QueryState()
+	require.NoError(t, service.Run(context.Background(), Options{}))
+	after, err := b.QueryState(context.Background())
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"dev", "personal"}, backendSessionNames(after.Sessions), "unrelated session must survive the force matrix on base index 1")
 	dev := findBackendSession(t, after.Sessions, "dev")

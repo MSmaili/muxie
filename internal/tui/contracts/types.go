@@ -8,6 +8,9 @@ const (
 	NodeKindPane    NodeKind = "pane"
 )
 
+type NodeID string
+type BackendTarget string
+
 type Capability string
 
 const (
@@ -25,11 +28,12 @@ const (
 )
 
 type Node struct {
-	ID       string
-	ParentID string
+	ID       NodeID
+	ParentID NodeID
 	Kind     NodeKind
 	Label    string
-	Target   string
+	Name     string
+	Target   BackendTarget
 	Path     string
 	Active   bool
 	Children []Node
@@ -37,8 +41,8 @@ type Node struct {
 
 type Snapshot struct {
 	Nodes        []Node
-	ActiveNodeID string
-	ContextBars  map[string]string
+	ActiveNodeID NodeID
+	Workspace    string
 	Capabilities map[Capability]bool
 }
 
@@ -59,13 +63,17 @@ const (
 )
 
 type Intent struct {
-	Type    IntentType
-	Target  string
-	Payload map[string]string
+	Type         IntentType
+	NodeID       NodeID
+	ParentNodeID NodeID
+	Target       BackendTarget
+	Session      BackendTarget
+	Name         string
 }
 
 type ActionResult struct {
 	Message      string
 	Snapshot     *Snapshot
 	NeedsRefresh bool
+	Navigation   BackendTarget
 }

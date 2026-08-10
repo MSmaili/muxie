@@ -30,7 +30,7 @@ func newFilterModel(t *testing.T) model {
 
 func (m model) selectedNodeID() string {
 	if r, ok := m.selectedRow(); ok {
-		return r.Node.ID
+		return string(r.Node.ID)
 	}
 	return ""
 }
@@ -38,7 +38,7 @@ func (m model) selectedNodeID() string {
 func rowIDs(m model) []string {
 	ids := make([]string, 0, len(m.rows))
 	for _, r := range m.rows {
-		ids = append(ids, r.Node.ID)
+		ids = append(ids, string(r.Node.ID))
 	}
 	return ids
 }

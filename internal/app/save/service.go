@@ -2,6 +2,7 @@ package save
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -28,7 +29,10 @@ func NewService(detectBackend func(...string) (backend.Backend, error)) Service 
 	return Service{DetectBackend: detectBackend}
 }
 
-func (s Service) Run(opts Options) (string, error) {
+func (s Service) Run(ctx context.Context, opts Options) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if err := validateOptions(opts); err != nil {
 		return "", err
 	}
@@ -38,7 +42,7 @@ func (s Service) Run(opts Options) (string, error) {
 		return "", fmt.Errorf("failed to detect backend: %w\nHint: Make sure a supported multiplexer is running", err)
 	}
 
-	sessions, err := getTargetSessions(b, opts.All)
+	sessions, err := getTargetSessions(ctx, b, opts.All)
 	if err != nil {
 		return "", err
 	}
@@ -48,7 +52,7 @@ func (s Service) Run(opts Options) (string, error) {
 		return "", err
 	}
 
-	return saveWorkspace(sessions, outputPath, opts.All)
+	return saveWorkspace(ctx, sessions, outputPath, opts.All)
 }
 
 func (s Service) detectBackend() (backend.Backend, error) {
@@ -65,8 +69,8 @@ func validateOptions(opts Options) error {
 	return nil
 }
 
-func getTargetSessions(b backend.Backend, saveAll bool) ([]backend.Session, error) {
-	result, err := b.QueryState()
+func getTargetSessions(ctx context.Context, b backend.Backend, saveAll bool) ([]backend.Session, error) {
+	result, err := b.QueryState(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sessions: %w", err)
 	}
@@ -137,7 +141,10 @@ var (
 	}
 )
 
-func saveWorkspace(sessions []backend.Session, outputPath string, saveAll bool) (string, error) {
+func saveWorkspace(ctx context.Context, sessions []backend.Session, outputPath string, saveAll bool) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	absPath, err := filepath.Abs(outputPath)
 	if err != nil {
 		return "", fmt.Errorf("resolving absolute path: %w", err)
@@ -163,7 +170,10 @@ func saveWorkspace(sessions []backend.Session, outputPath string, saveAll bool) 
 	if err != nil {
 		return "", err
 	}
-	if err := replaceDestination(absPath, data, observed); err != nil {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := replaceDestination(ctx, absPath, data, observed); err != nil {
 		return "", fmt.Errorf("writing workspace: %w", err)
 	}
 	return absPath, nil
@@ -212,7 +222,10 @@ func readDestination(path string) (destinationSnapshot, error) {
 	return destinationSnapshot{exists: true, info: readInfo, data: data}, nil
 }
 
-func replaceDestination(path string, data []byte, observed destinationSnapshot) error {
+func replaceDestination(ctx context.Context, path string, data []byte, observed destinationSnapshot) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	parent := filepath.Dir(path)
 	if err := os.MkdirAll(parent, 0755); err != nil {
 		return fmt.Errorf("create destination directory: %w", err)
@@ -229,6 +242,9 @@ func replaceDestination(path string, data []byte, observed destinationSnapshot) 
 	defer func() { _ = os.Remove(tempPath) }()
 
 	if err := ensureDestinationUnchanged(path, observed); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if err := renameSave(tempPath, path); err != nil {

@@ -33,7 +33,7 @@ func init() {
 }
 
 func runSave(cmd *cobra.Command, args []string) error {
-	outputPath, err := appsave.NewService(detectBackend).Run(appsave.Options{
+	outputPath, err := appsave.NewService(detectBackend).Run(cmd.Context(), appsave.Options{
 		Path:  savePath,
 		Name:  saveName,
 		Local: len(args) > 0 && args[0] == ".",

@@ -3,6 +3,7 @@
 package tmux
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -47,10 +48,10 @@ func TestQueryStateRoundTripsDelimiterAndControlValues(t *testing.T) {
 	// '|' previously corrupted the row; backslash names get extra tmux
 	// escaping so they stay in unit tests and the option value below.
 	windowName := `edit|"main" 'aux' 日本語`
-	require.NoError(t, b.Apply([]backend.Action{backend.CreateSessionAction{Name: sessionName, WindowName: windowName}}))
-	require.NoError(t, b.client.Execute(SetSessionOption{Session: sessionName, Key: backend.WorkspacePathOption, Value: ` /tmp/ws|path\\1.yaml `}))
+	require.NoError(t, b.Apply(context.Background(), []backend.Action{backend.CreateSessionAction{Name: sessionName, WindowName: windowName}}))
+	require.NoError(t, b.client.Execute(context.Background(), SetSessionOption{Session: sessionName, Key: backend.WorkspacePathOption, Value: ` /tmp/ws|path\\1.yaml `}))
 
-	live, err := b.QueryState()
+	live, err := b.QueryState(context.Background())
 	require.NoError(t, err)
 
 	if assert.Len(t, live.Sessions, 1) && assert.Len(t, live.Sessions[0].Windows, 1) {
@@ -63,14 +64,14 @@ func TestQueryStateRoundTripsDelimiterAndControlValues(t *testing.T) {
 func TestSendKeysPreservesLiteralCommandSeparator(t *testing.T) {
 	b := newIsolatedTmuxBackend(t)
 	marker := filepath.Join(t.TempDir(), "keys")
-	_, err := b.client.Run("new-session", "-d", "-s", "literal", fmt.Sprintf("cat > %q", marker))
+	_, err := b.client.Run(context.Background(), "new-session", "-d", "-s", "literal", fmt.Sprintf("cat > %q", marker))
 	require.NoError(t, err)
-	state, err := RunQuery(b.client, LoadStateQuery{})
+	state, err := RunQuery(context.Background(), b.client, LoadStateQuery{})
 	require.NoError(t, err)
 	require.Len(t, state.Sessions, 1)
 	paneID := state.Sessions[0].Windows[0].Panes[0].ID
 
-	require.NoError(t, b.client.Execute(SendKeys{Target: paneID, Keys: ";"}))
+	require.NoError(t, b.client.Execute(context.Background(), SendKeys{Target: paneID, Keys: ";"}))
 	require.Eventually(t, func() bool {
 		data, err := os.ReadFile(marker)
 		return err == nil && string(data) == ";\n"
@@ -80,10 +81,10 @@ func TestSendKeysPreservesLiteralCommandSeparator(t *testing.T) {
 func TestQueryStateFailsClosedOnNewlineValues(t *testing.T) {
 	for _, value := range []string{"x\n", "a\nb", "\n", "a\n\nb"} {
 		b := newIsolatedTmuxBackend(t)
-		require.NoError(t, b.Apply([]backend.Action{backend.CreateSessionAction{Name: "dev", WindowName: "ed"}}))
-		require.NoError(t, b.client.Execute(SetSessionOption{Session: "dev", Key: backend.WorkspacePathOption, Value: value}))
+		require.NoError(t, b.Apply(context.Background(), []backend.Action{backend.CreateSessionAction{Name: "dev", WindowName: "ed"}}))
+		require.NoError(t, b.client.Execute(context.Background(), SetSessionOption{Session: "dev", Key: backend.WorkspacePathOption, Value: value}))
 
-		_, err := b.QueryState()
+		_, err := b.QueryState(context.Background())
 		assert.Error(t, err, "workspace option %q must fail closed", value)
 	}
 }

@@ -3,6 +3,7 @@
 package tmux
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -43,8 +44,8 @@ func newNavigableTmuxBackend(t *testing.T) (*TmuxBackend, string) {
 func TestSwitchTargetsStableIDsOnColonNamedSessions(t *testing.T) {
 	b, navLog := newNavigableTmuxBackend(t)
 
-	require.NoError(t, b.client.Execute(CreateSession{Name: "a:b", WindowName: "w"}))
-	state, err := RunQuery(b.client, LoadStateQuery{})
+	require.NoError(t, b.client.Execute(context.Background(), CreateSession{Name: "a:b", WindowName: "w"}))
+	state, err := RunQuery(context.Background(), b.client, LoadStateQuery{})
 	require.NoError(t, err)
 	require.Len(t, state.Sessions, 1)
 	sessionID := state.Sessions[0].ID
@@ -52,12 +53,12 @@ func TestSwitchTargetsStableIDsOnColonNamedSessions(t *testing.T) {
 	windowIndex := state.Sessions[0].Windows[0].Index
 	paneBase := state.PaneBaseIndex
 
-	require.NoError(t, b.Switch(sessionID))
-	require.NoError(t, b.Switch(fmt.Sprintf("%s:%s", sessionID, windowID)))
-	require.NoError(t, b.Switch(fmt.Sprintf("%s:%s.0", sessionID, windowID)))
+	require.NoError(t, b.Switch(context.Background(), sessionID))
+	require.NoError(t, b.Switch(context.Background(), fmt.Sprintf("%s:%s", sessionID, windowID)))
+	require.NoError(t, b.Switch(context.Background(), fmt.Sprintf("%s:%s.0", sessionID, windowID)))
 
-	assert.Error(t, b.Switch("a:b"), "ambiguous name form must fail closed")
-	assert.Error(t, b.Switch(fmt.Sprintf("%s:@999", sessionID)), "unknown window ID must fail closed")
+	assert.Error(t, b.Switch(context.Background(), "a:b"), "ambiguous name form must fail closed")
+	assert.Error(t, b.Switch(context.Background(), fmt.Sprintf("%s:@999", sessionID)), "unknown window ID must fail closed")
 
 	logged, err := os.ReadFile(navLog)
 	require.NoError(t, err)

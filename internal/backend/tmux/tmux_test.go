@@ -1,7 +1,10 @@
 package tmux
 
 import (
+	"context"
 	"errors"
+	"math"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -9,6 +12,77 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type unsupportedBackendAction struct{}
+
+func (unsupportedBackendAction) Comment() string { return "unsupported" }
+func (unsupportedBackendAction) Validate() error { return nil }
+
+func TestCanceledContextPreventsQueryDispatch(t *testing.T) {
+	called := false
+	b := &TmuxBackend{client: &MockClient{RunFunc: func(context.Context, ...string) (string, error) {
+		called = true
+		return "", nil
+	}}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := b.QueryState(ctx)
+
+	require.ErrorIs(t, err, context.Canceled)
+	assert.False(t, called)
+}
+
+func TestQueryAndMutationObserveCancellation(t *testing.T) {
+	t.Run("query", func(t *testing.T) {
+		started := make(chan struct{})
+		b := &TmuxBackend{client: &MockClient{RunFunc: func(ctx context.Context, _ ...string) (string, error) {
+			close(started)
+			<-ctx.Done()
+			return "", ctx.Err()
+		}}}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			_, err := b.QueryState(ctx)
+			done <- err
+		}()
+		awaitTmuxChannel(t, started)
+		cancel()
+		require.ErrorIs(t, awaitTmuxChannel(t, done), context.Canceled)
+	})
+
+	t.Run("mutation", func(t *testing.T) {
+		started := make(chan struct{})
+		b := &TmuxBackend{client: &MockClient{ExecuteFunc: func(ctx context.Context, _ Action) error {
+			close(started)
+			<-ctx.Done()
+			return ctx.Err()
+		}}}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- b.Apply(ctx, []backend.Action{backend.KillSessionAction{Name: "dev"}})
+		}()
+		awaitTmuxChannel(t, started)
+		cancel()
+		require.ErrorIs(t, awaitTmuxChannel(t, done), context.Canceled)
+	})
+}
+
+func TestUnsupportedBackendActionFailsApplyAndDryRunBeforeDispatch(t *testing.T) {
+	dispatched := false
+	b := &TmuxBackend{client: &MockClient{ExecuteFunc: func(context.Context, Action) error {
+		dispatched = true
+		return nil
+	}}}
+	actions := []backend.Action{backend.KillSessionAction{Name: "dev"}, unsupportedBackendAction{}}
+
+	assert.ErrorContains(t, b.Apply(context.Background(), actions), "unsupported backend action")
+	assert.False(t, dispatched)
+	_, err := b.DryRun(actions)
+	assert.ErrorContains(t, err, "unsupported backend action")
+}
 
 func TestQueryStateToleratesEmptyServer(t *testing.T) {
 	t.Setenv("TMUX", "")
@@ -19,13 +93,36 @@ func TestQueryStateToleratesEmptyServer(t *testing.T) {
 	}
 	for _, runErr := range cases {
 		b := &TmuxBackend{client: &MockClient{
-			RunFunc: func(args ...string) (string, error) {
+			RunFunc: func(_ context.Context, args ...string) (string, error) {
 				return "0\n0\n", runErr
 			},
 		}}
-		res, err := b.QueryState()
+		res, err := b.QueryState(context.Background())
 		assert.NoError(t, err)
 		assert.Empty(t, res.Sessions)
+	}
+}
+
+func TestQueryStateDoesNotSuppressCancellationFromEmptyServer(t *testing.T) {
+	b := &TmuxBackend{client: &MockClient{RunFunc: func(context.Context, ...string) (string, error) {
+		return "0\n0\n", errors.Join(context.Canceled, errors.New("no server running on /tmp/tmux/default"))
+	}}}
+
+	_, err := b.QueryState(context.Background())
+
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestQueryStateDoesNotSuppressParseFailureFromEmptyServer(t *testing.T) {
+	for _, output := range []string{"", "malformed"} {
+		b := &TmuxBackend{client: &MockClient{RunFunc: func(context.Context, ...string) (string, error) {
+			return output, errors.New("no server running on /tmp/tmux/default")
+		}}}
+
+		_, err := b.QueryState(context.Background())
+
+		assert.ErrorContains(t, err, "missing base indexes")
+		assert.ErrorContains(t, err, "no server running")
 	}
 }
 
@@ -37,22 +134,22 @@ func TestQueryStatePropagatesRealFailures(t *testing.T) {
 		"0\n0\n$1|dev|@1|editor|0|layout-a|0|1|%1|0|1|~/code|vim|",
 	} {
 		b := &TmuxBackend{client: &MockClient{
-			RunFunc: func(args ...string) (string, error) {
+			RunFunc: func(_ context.Context, args ...string) (string, error) {
 				return output, errors.New("permission denied")
 			},
 		}}
-		_, err := b.QueryState()
+		_, err := b.QueryState(context.Background())
 		assert.ErrorContains(t, err, "permission denied")
 	}
 }
 
 func TestQueryStatePreservesStableObjectIDsAndPaneIndex(t *testing.T) {
 	t.Setenv("TMUX", ",,1")
-	b := &TmuxBackend{client: &MockClient{RunFunc: func(args ...string) (string, error) {
+	b := &TmuxBackend{client: &MockClient{RunFunc: func(_ context.Context, args ...string) (string, error) {
 		return "0\n1\n$1|dev|@2|editor|3|layout-a|0|1|%7|4|1|~/code|vim|", nil
 	}}}
 
-	result, err := b.QueryState()
+	result, err := b.QueryState(context.Background())
 	assert.NoError(t, err)
 	if assert.Len(t, result.Sessions, 1) && assert.Len(t, result.Sessions[0].Windows, 1) && assert.Len(t, result.Sessions[0].Windows[0].Panes, 1) {
 		assert.Equal(t, "$1", result.Sessions[0].ID)
@@ -65,20 +162,66 @@ func TestQueryStatePreservesStableObjectIDsAndPaneIndex(t *testing.T) {
 
 func TestApplyRejectsWindowDestructionWithoutStableID(t *testing.T) {
 	executed := false
-	b := &TmuxBackend{client: &MockClient{ExecuteFunc: func(Action) error {
+	b := &TmuxBackend{client: &MockClient{ExecuteFunc: func(context.Context, Action) error {
 		executed = true
 		return nil
 	}}}
 
-	err := b.Apply([]backend.Action{backend.KillWindowAction{Session: "dev", Window: "editor"}})
+	err := b.Apply(context.Background(), []backend.Action{backend.KillWindowAction{Session: "dev", Window: "editor"}})
 	assert.ErrorContains(t, err, "stable ID")
 	assert.False(t, executed)
+}
+
+func TestApplyRejectsMalformedStableWindowIDs(t *testing.T) {
+	for _, action := range []backend.Action{
+		backend.RenameWindowAction{Session: "dev", Window: "editor", WindowID: "@bad", New: "logs"},
+		backend.KillWindowAction{Session: "dev", Window: "editor", WindowID: "2"},
+	} {
+		executed := false
+		b := &TmuxBackend{client: &MockClient{ExecuteFunc: func(context.Context, Action) error {
+			executed = true
+			return nil
+		}}}
+
+		err := b.Apply(context.Background(), []backend.Action{action})
+
+		assert.ErrorContains(t, err, "invalid window ID")
+		assert.False(t, executed)
+	}
+}
+
+func TestCreateTargetRejectsMalformedReturnedIDs(t *testing.T) {
+	for _, output := range []string{"@bad|%1", "@1|%bad"} {
+		b := &TmuxBackend{client: &MockClient{RunFunc: func(context.Context, ...string) (string, error) {
+			return output, nil
+		}}}
+
+		err := b.Apply(context.Background(), []backend.Action{backend.CreateWindowAction{Session: "dev", Name: "logs"}})
+
+		assert.ErrorContains(t, err, "invalid created target")
+	}
+}
+
+func TestApplyRejectsMalformedReturnedSplitPaneID(t *testing.T) {
+	b := &TmuxBackend{client: &MockClient{RunFunc: func(_ context.Context, args ...string) (string, error) {
+		if args[0] == "new-session" {
+			return "@1|%1", nil
+		}
+		return "%bad", nil
+	}}}
+
+	err := b.Apply(context.Background(), []backend.Action{
+		backend.CreateSessionAction{Name: "dev", WindowName: "editor"},
+		backend.SplitPaneAction{Session: "dev", Window: "editor"},
+	})
+
+	assert.ErrorContains(t, err, "invalid pane ID")
 }
 
 func TestApplyUsesReturnedCreationIDsForFollowups(t *testing.T) {
 	var events []string
 	client := &MockClient{
-		RunFunc: func(args ...string) (string, error) {
+		RunFunc: func(_ context.Context, args ...string) (string, error) {
 			events = append(events, "run "+strings.Join(args, " "))
 			switch args[0] {
 			case "new-session":
@@ -91,7 +234,7 @@ func TestApplyUsesReturnedCreationIDsForFollowups(t *testing.T) {
 				return "", nil
 			}
 		},
-		ExecuteFunc: func(action Action) error {
+		ExecuteFunc: func(_ context.Context, action Action) error {
 			events = append(events, "exec "+strings.Join(action.Args(), " "))
 			return nil
 		},
@@ -108,7 +251,7 @@ func TestApplyUsesReturnedCreationIDsForFollowups(t *testing.T) {
 		backend.KillWindowAction{Session: "dev", Window: "logs", WindowID: "@11"},
 	}
 
-	assert.NoError(t, b.Apply(actions))
+	assert.NoError(t, b.Apply(context.Background(), actions))
 	assert.Equal(t, []string{
 		"run new-session -d -s dev -n editor -c ~/code -P -F #{window_id}|#{pane_id}",
 		"run split-window -t @10 -c ~/api -P -F #{pane_id}",
@@ -123,11 +266,12 @@ func TestApplyUsesReturnedCreationIDsForFollowups(t *testing.T) {
 
 func TestDryRunUsesSymbolicCreatedIDsInsteadOfPredictedIndexes(t *testing.T) {
 	b := &TmuxBackend{}
-	lines := b.DryRun([]backend.Action{
+	lines, err := b.DryRun([]backend.Action{
 		backend.CreateSessionAction{Name: "dev", WindowName: "editor"},
 		backend.SplitPaneAction{Session: "dev", Window: "editor", Path: "~/api"},
 		backend.SendKeysAction{Session: "dev", Window: "editor", Pane: 1, Command: "npm test"},
 	})
+	require.NoError(t, err)
 
 	assert.Equal(t, []string{
 		"tmux new-session -d -s dev -n editor -P -F #{window_id}|#{pane_id}",
@@ -201,6 +345,9 @@ func TestSwitchValidatesAndResolvesTargets(t *testing.T) {
 		{name: "empty pane", target: "core:ed.", wantErr: "invalid pane index"},
 		{name: "negative pane", target: "core:ed.-1", wantErr: "invalid pane index"},
 		{name: "non-numeric pane", target: "core:ed.x", wantErr: "invalid pane index"},
+		{name: "malformed session ID", target: "$bad", wantErr: "invalid session ID"},
+		{name: "malformed window ID", target: "core:@bad", wantErr: "invalid window ID"},
+		{name: "pane index overflow", target: "core:editor." + strconv.Itoa(math.MaxInt), wantErr: "pane index overflows"},
 		{name: "ambiguous name collision", target: "a:b", wantErr: "ambiguous switch target"},
 		{name: "ID ref ignores name shadow", target: "$1:editor", wantNav: "$1:1"},
 		{name: "ID target not blocked by ID-shaped name", target: "$1:@1", wantNav: "$1:1"},
@@ -222,19 +369,19 @@ func TestSwitchValidatesAndResolvesTargets(t *testing.T) {
 			t.Setenv("TMUX", "")
 			var nav []string
 			b := &TmuxBackend{client: &MockClient{
-				RunFunc: func(args ...string) (string, error) {
+				RunFunc: func(_ context.Context, args ...string) (string, error) {
 					if args[0] == "start-server" {
 						return stateOutput, nil
 					}
 					return "", nil
 				},
-				ExecuteFunc: func(action Action) error {
+				ExecuteFunc: func(_ context.Context, action Action) error {
 					nav = append(nav, strings.Join(action.Args(), " "))
 					return nil
 				},
 			}}
 
-			err := b.Switch(tt.target)
+			err := b.Switch(context.Background(), tt.target)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.ErrorContains(t, err, tt.wantErr)

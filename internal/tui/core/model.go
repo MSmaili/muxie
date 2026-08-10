@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -10,12 +11,19 @@ import (
 	"github.com/MSmaili/hetki/internal/tui/contracts"
 )
 
-type DispatchFunc func(context.Context, contracts.Intent) (contracts.ActionResult, error)
+type DispatchFunc func(contracts.Intent) (contracts.ActionResult, error)
 
-func Run(ctx context.Context, initial contracts.Snapshot, dispatch DispatchFunc) error {
+func Run(ctx context.Context, initial contracts.Snapshot, dispatch DispatchFunc) (contracts.BackendTarget, error) {
 	p := tea.NewProgram(newModel(initial, dispatch), tea.WithContext(ctx))
-	_, err := p.Run()
-	return err
+	final, err := p.Run()
+	if err != nil {
+		return "", err
+	}
+	m, ok := final.(model)
+	if !ok {
+		return "", fmt.Errorf("unexpected final TUI model %T", final)
+	}
+	return m.navigation, nil
 }
 
 type row struct {
@@ -47,8 +55,9 @@ type inputState struct {
 	Title        string
 	Prompt       string
 	IntentType   contracts.IntentType
-	Target       string
-	Payload      map[string]string
+	NodeID       contracts.NodeID
+	Target       contracts.BackendTarget
+	Session      contracts.BackendTarget
 	Value        string
 	SubmitStatus string
 }
@@ -61,21 +70,22 @@ type confirmState struct {
 }
 
 type model struct {
-	snapshot contracts.Snapshot
-	rows     []row
-	cursor   int
-	offset   int
-	listH    int
-	mode     uiMode
-	filter   string
-	status   string
-	err      error
-	busy     bool
-	input    inputState
-	confirm  confirmState
-	expanded map[string]bool
-	pending  *contracts.Intent
-	helpOpen bool
+	snapshot   contracts.Snapshot
+	rows       []row
+	cursor     int
+	offset     int
+	listH      int
+	mode       uiMode
+	filter     string
+	status     string
+	err        error
+	busy       bool
+	input      inputState
+	confirm    confirmState
+	expanded   map[contracts.NodeID]bool
+	pending    *contracts.Intent
+	navigation contracts.BackendTarget
+	helpOpen   bool
 
 	width  int
 	height int
@@ -197,7 +207,7 @@ func (m *model) toggleCurrentRow(expand bool) bool {
 		return false
 	}
 	if m.expanded == nil {
-		m.expanded = make(map[string]bool)
+		m.expanded = make(map[contracts.NodeID]bool)
 	}
 	m.expanded[selected.Node.ID] = expand
 	m.applyFilter()
@@ -209,7 +219,7 @@ func (m *model) collapseAll() bool {
 	if strings.TrimSpace(m.filter) != "" {
 		return false
 	}
-	m.expanded = make(map[string]bool)
+	m.expanded = make(map[contracts.NodeID]bool)
 	m.applyFilter()
 	*m = m.reflow()
 	return true
@@ -220,7 +230,7 @@ func (m *model) expandAll() bool {
 		return false
 	}
 	if m.expanded == nil {
-		m.expanded = make(map[string]bool)
+		m.expanded = make(map[contracts.NodeID]bool)
 	}
 	markAllExpanded(m.snapshot.Nodes, m.expanded)
 	m.applyFilter()
@@ -245,11 +255,8 @@ func (m model) requireCapability(c contracts.Capability, label string) (model, b
 	return m, false
 }
 
-func workspaceContext(ctx map[string]string) string {
-	if ctx == nil {
-		return ""
-	}
-	workspace := strings.TrimSpace(ctx["workspace"])
+func workspaceContext(value string) string {
+	workspace := strings.TrimSpace(value)
 	if workspace == "" {
 		return ""
 	}
@@ -279,21 +286,6 @@ func workspaceLabel(workspace string) string {
 }
 
 func cloneIntent(intent contracts.Intent) *contracts.Intent {
-	cloned := contracts.Intent{
-		Type:    intent.Type,
-		Target:  intent.Target,
-		Payload: clonePayloadMap(intent.Payload),
-	}
+	cloned := intent
 	return &cloned
-}
-
-func clonePayloadMap(payload map[string]string) map[string]string {
-	if payload == nil {
-		return nil
-	}
-	cloned := make(map[string]string, len(payload))
-	for k, v := range payload {
-		cloned[k] = v
-	}
-	return cloned
 }

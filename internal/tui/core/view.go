@@ -43,7 +43,7 @@ func (m model) View() tea.View {
 	for i := start; i < end && len(visibleRows) < m.listH; i++ {
 		r := m.rows[i]
 		visibleRows = append(visibleRows, components.TreeRowProps{
-			NodeID:     r.Node.ID,
+			NodeID:     string(r.Node.ID),
 			Kind:       r.Node.Kind,
 			Label:      r.Node.Label,
 			Path:       r.Node.Path,
@@ -155,7 +155,7 @@ func headerRight(m model) string {
 func sessionPositionLabel(m model) string {
 	total := 0
 	current := 0
-	selectedSessionID := ""
+	var selectedSessionID contracts.NodeID
 	if selected, ok := m.selectedRow(); ok {
 		selectedSessionID = selected.Node.ID
 		if selected.Node.ParentID != "" {
@@ -175,7 +175,7 @@ func sessionPositionLabel(m model) string {
 	if current > 0 {
 		position = fmt.Sprintf("%d/%d", current, total)
 	}
-	workspace := workspaceLabel(m.snapshot.ContextBars["workspace"])
+	workspace := workspaceLabel(m.snapshot.Workspace)
 	if workspace == "" {
 		return position
 	}

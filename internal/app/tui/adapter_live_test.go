@@ -20,35 +20,38 @@ type stubBackend struct {
 
 func (s *stubBackend) Name() string { return "stub" }
 
-func (s *stubBackend) QueryState() (backend.StateResult, error) {
+func (s *stubBackend) QueryState(context.Context) (backend.StateResult, error) {
 	if s.stateErr != nil {
 		return backend.StateResult{}, s.stateErr
 	}
 	return s.state, nil
 }
 
-func (s *stubBackend) Apply(actions []backend.Action) error {
+func (s *stubBackend) Apply(_ context.Context, actions []backend.Action) error {
 	cloned := make([]backend.Action, len(actions))
 	copy(cloned, actions)
 	s.applyCalls = append(s.applyCalls, cloned)
 	return s.applyErr
 }
 
-func (s *stubBackend) DryRun(actions []backend.Action) []string { return nil }
-func (s *stubBackend) Attach(session string) error              { return nil }
+func (s *stubBackend) DryRun([]backend.Action) ([]string, error) { return nil, nil }
+func (s *stubBackend) Attach(context.Context, string) error      { return nil }
 
-func (s *stubBackend) Switch(target string) error {
+func (s *stubBackend) Switch(_ context.Context, target string) error {
 	s.switchCalls = append(s.switchCalls, target)
 	return nil
 }
 
-func TestLiveAdapterExecuteSwitchDoesNotRefresh(t *testing.T) {
+func TestLiveAdapterDefersSwitchUntilNavigate(t *testing.T) {
 	stub := &stubBackend{}
 	adapter := NewLiveAdapter(func(...string) (backend.Backend, error) { return stub, nil })
 
 	result, err := adapter.Execute(context.Background(), contracts.Intent{Type: contracts.IntentSwitch, Target: "core:1"})
 	require.NoError(t, err)
 	assert.False(t, result.NeedsRefresh)
+	assert.Empty(t, stub.switchCalls)
+	require.NotEmpty(t, result.Navigation)
+	require.NoError(t, adapter.Navigate(context.Background(), result.Navigation))
 	assert.Equal(t, []string{"core:1"}, stub.switchCalls)
 }
 
@@ -63,9 +66,7 @@ func TestLiveAdapterExecuteCreateSessionInheritsWorkspace(t *testing.T) {
 
 	result, err := adapter.Execute(context.Background(), contracts.Intent{
 		Type: contracts.IntentCreateSession,
-		Payload: map[string]string{
-			"name": "sandbox",
-		},
+		Name: "sandbox",
 	})
 	require.NoError(t, err)
 	assert.True(t, result.NeedsRefresh)
@@ -89,9 +90,7 @@ func TestLiveAdapterExecuteCreateWindow(t *testing.T) {
 	result, err := adapter.Execute(context.Background(), contracts.Intent{
 		Type:   contracts.IntentCreateWindow,
 		Target: "core:1",
-		Payload: map[string]string{
-			"name": "logs",
-		},
+		Name:   "logs",
 	})
 	require.NoError(t, err)
 	assert.True(t, result.NeedsRefresh)
@@ -109,9 +108,7 @@ func TestLiveAdapterExecuteRenameSession(t *testing.T) {
 	result, err := adapter.Execute(context.Background(), contracts.Intent{
 		Type:   contracts.IntentRenameSession,
 		Target: "core",
-		Payload: map[string]string{
-			"name": "prod",
-		},
+		Name:   "prod",
 	})
 	require.NoError(t, err)
 	assert.True(t, result.NeedsRefresh)
@@ -128,18 +125,16 @@ func TestLiveAdapterExecuteRenameWindow(t *testing.T) {
 
 	result, err := adapter.Execute(context.Background(), contracts.Intent{
 		Type:   contracts.IntentRenameWindow,
-		Target: "core:2",
-		Payload: map[string]string{
-			"name": "logs",
-		},
+		Target: "core:@2",
+		Name:   "logs",
 	})
 	require.NoError(t, err)
 	assert.True(t, result.NeedsRefresh)
-	assert.Equal(t, "renamed window core:2 -> logs", result.Message)
+	assert.Equal(t, "renamed window core:@2 -> logs", result.Message)
 
 	require.Len(t, stub.applyCalls, 1)
 	require.Len(t, stub.applyCalls[0], 1)
-	assert.Equal(t, backend.RenameWindowAction{Session: "core", Window: "2", WindowID: "2", New: "logs"}, stub.applyCalls[0][0])
+	assert.Equal(t, backend.RenameWindowAction{Session: "core", Window: "@2", WindowID: "@2", New: "logs"}, stub.applyCalls[0][0])
 }
 
 func TestLiveAdapterExecuteDeleteWindowParsesPaneTarget(t *testing.T) {
@@ -148,15 +143,30 @@ func TestLiveAdapterExecuteDeleteWindowParsesPaneTarget(t *testing.T) {
 
 	result, err := adapter.Execute(context.Background(), contracts.Intent{
 		Type:   contracts.IntentDeleteWindow,
-		Target: "core:2.3",
+		Target: "core:@2.3",
 	})
 	require.NoError(t, err)
 	assert.True(t, result.NeedsRefresh)
-	assert.Equal(t, "deleted window core:2", result.Message)
+	assert.Equal(t, "deleted window core:@2", result.Message)
 
 	require.Len(t, stub.applyCalls, 1)
 	require.Len(t, stub.applyCalls[0], 1)
-	assert.Equal(t, backend.KillWindowAction{Session: "core", Window: "2", WindowID: "2"}, stub.applyCalls[0][0])
+	assert.Equal(t, backend.KillWindowAction{Session: "core", Window: "@2", WindowID: "@2"}, stub.applyCalls[0][0])
+}
+
+func TestLiveAdapterRejectsUnstableWindowMutationTargets(t *testing.T) {
+	stub := &stubBackend{}
+	adapter := NewLiveAdapter(func(...string) (backend.Backend, error) { return stub, nil })
+	for _, intent := range []contracts.Intent{
+		{Type: contracts.IntentRenameWindow, Target: "core:2", Name: "logs"},
+		{Type: contracts.IntentDeleteWindow, Target: "core:editor"},
+		{Type: contracts.IntentDeleteWindow, Target: "core:@bad"},
+		{Type: contracts.IntentDeleteWindow, Target: "core:@+2"},
+	} {
+		_, err := adapter.Execute(context.Background(), intent)
+		assert.ErrorContains(t, err, "stable @N window ID")
+	}
+	assert.Empty(t, stub.applyCalls)
 }
 
 func TestLiveAdapterLoadBuildsSessionWindowTreeAndCRUDCapabilities(t *testing.T) {
@@ -188,7 +198,7 @@ func TestLiveAdapterLoadBuildsSessionWindowTreeAndCRUDCapabilities(t *testing.T)
 	require.Len(t, snapshot.Nodes[0].Children, 1)
 	assert.Empty(t, snapshot.Nodes[0].Children[0].Children)
 	assert.Equal(t, contracts.NodeKindWindow, snapshot.Nodes[0].Children[0].Kind)
-	assert.Equal(t, "$1:@1", snapshot.Nodes[0].Children[0].Target, "targets use stable IDs")
-	assert.Equal(t, "$1", snapshot.Nodes[0].Target)
-	assert.Equal(t, "window:@1", snapshot.ActiveNodeID)
+	assert.Equal(t, contracts.BackendTarget("$1:@1"), snapshot.Nodes[0].Children[0].Target, "targets use stable IDs")
+	assert.Equal(t, contracts.BackendTarget("$1"), snapshot.Nodes[0].Target)
+	assert.Equal(t, contracts.NodeID("window:@1"), snapshot.ActiveNodeID)
 }

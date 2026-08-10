@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/spf13/cobra"
@@ -34,9 +36,9 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		raw = args[0]
 	} else {
-		line, err := readStdinLine()
+		line, err := readStdinLine(cmd.Context())
 		if err != nil {
-			return fmt.Errorf("no target provided\nUsage: hetki switch <target> or pipe from stdin")
+			return fmt.Errorf("no target provided\nUsage: hetki switch <target> or pipe from stdin: %w", err)
 		}
 		raw = line
 	}
@@ -51,13 +53,16 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to detect backend: %w", err)
 	}
 
-	if err := b.Switch(target); err != nil {
+	if err := b.Switch(cmd.Context(), target); err != nil {
 		return fmt.Errorf("switch to %q: %w", target, err)
 	}
 	return nil
 }
 
-func readStdinLine() (string, error) {
+func readStdinLine(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	info, err := os.Stdin.Stat()
 	if err != nil {
 		return "", err
@@ -66,9 +71,26 @@ func readStdinLine() (string, error) {
 		return "", fmt.Errorf("stdin is a terminal")
 	}
 
+	deadlineSet := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = os.Stdin.SetReadDeadline(time.Now())
+		close(deadlineSet)
+	})
+	defer func() {
+		if !stop() {
+			<-deadlineSet
+		}
+		_ = os.Stdin.SetReadDeadline(time.Time{})
+	}()
 	scanner := bufio.NewScanner(os.Stdin)
 	if scanner.Scan() {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		return scanner.Text(), nil
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 	if err := scanner.Err(); err != nil {
 		return "", err
@@ -84,11 +106,11 @@ func parseTarget(raw string) string {
 }
 
 func stripMarkerPrefix(s string) string {
-	i := strings.IndexFunc(s, func(r rune) bool {
-		return r == ':' || unicode.IsLetter(r) || unicode.IsDigit(r)
-	})
-	if i > 0 {
-		s = s[i:]
+	space := strings.IndexFunc(s, unicode.IsSpace)
+	if space > 0 && strings.IndexFunc(s[:space], func(r rune) bool {
+		return r == '$' || unicode.IsLetter(r) || unicode.IsDigit(r)
+	}) == -1 {
+		return strings.TrimSpace(s[space:])
 	}
 	return strings.TrimSpace(s)
 }

@@ -6,13 +6,13 @@ import (
 	"github.com/MSmaili/hetki/internal/tui/contracts"
 )
 
-func flatten(nodes []contracts.Node, expanded map[string]bool, includeAll bool) []row {
+func flatten(nodes []contracts.Node, expanded map[contracts.NodeID]bool, includeAll bool) []row {
 	out := make([]row, 0)
 	flattenAtDepth(nodes, nil, expanded, includeAll, &out)
 	return out
 }
 
-func flattenAtDepth(nodes []contracts.Node, ancestors []bool, expanded map[string]bool, includeAll bool, out *[]row) {
+func flattenAtDepth(nodes []contracts.Node, ancestors []bool, expanded map[contracts.NodeID]bool, includeAll bool, out *[]row) {
 	for i, n := range nodes {
 		hasNext := i < len(nodes)-1
 		depth := len(ancestors)
@@ -33,8 +33,8 @@ func flattenAtDepth(nodes []contracts.Node, ancestors []bool, expanded map[strin
 	}
 }
 
-func defaultExpanded(nodes []contracts.Node, activeNodeID string) map[string]bool {
-	expanded := make(map[string]bool)
+func defaultExpanded(nodes []contracts.Node, activeNodeID contracts.NodeID) map[contracts.NodeID]bool {
+	expanded := make(map[contracts.NodeID]bool)
 	markAllExpanded(nodes, expanded)
 	if activeNodeID != "" {
 		markActivePathExpanded(nodes, activeNodeID, expanded)
@@ -42,7 +42,7 @@ func defaultExpanded(nodes []contracts.Node, activeNodeID string) map[string]boo
 	return expanded
 }
 
-func markActivePathExpanded(nodes []contracts.Node, activeNodeID string, expanded map[string]bool) bool {
+func markActivePathExpanded(nodes []contracts.Node, activeNodeID contracts.NodeID, expanded map[contracts.NodeID]bool) bool {
 	for _, n := range nodes {
 		if n.ID == activeNodeID {
 			expanded[n.ID] = true
@@ -56,7 +56,7 @@ func markActivePathExpanded(nodes []contracts.Node, activeNodeID string, expande
 	return false
 }
 
-func markAllExpanded(nodes []contracts.Node, expanded map[string]bool) {
+func markAllExpanded(nodes []contracts.Node, expanded map[contracts.NodeID]bool) {
 	for _, n := range nodes {
 		if len(n.Children) > 0 {
 			expanded[n.ID] = true

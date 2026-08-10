@@ -57,7 +57,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	result, listErr := applist.NewService(detectBackend).Run(applist.Options{
+	result, listErr := applist.NewService(detectBackend).Run(cmd.Context(), applist.Options{
 		Mode:            mode,
 		IncludeSessions: listSessions,
 		IncludeWindows:  listWindows,

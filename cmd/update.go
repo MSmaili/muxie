@@ -25,7 +25,7 @@ func init() {
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
-	return appupdate.NewService().Run(appupdate.Options{
+	return appupdate.NewService().Run(cmd.Context(), appupdate.Options{
 		CurrentVersion: Version,
 		FromSource:     updateFromSource,
 		DryRun:         updateDryRun,

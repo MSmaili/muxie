@@ -1,5 +1,7 @@
 package backend
 
+import "context"
+
 type Action interface {
 	Comment() string
 	Validate() error
@@ -7,9 +9,9 @@ type Action interface {
 
 type Backend interface {
 	Name() string
-	QueryState() (StateResult, error)
-	Apply(actions []Action) error
-	DryRun(actions []Action) []string
-	Attach(session string) error
-	Switch(target string) error
+	QueryState(context.Context) (StateResult, error)
+	Apply(context.Context, []Action) error
+	DryRun([]Action) ([]string, error)
+	Attach(context.Context, string) error
+	Switch(context.Context, string) error
 }

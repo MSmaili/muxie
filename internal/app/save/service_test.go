@@ -1,6 +1,7 @@
 package save
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -19,17 +20,17 @@ type stubBackend struct {
 
 func (s *stubBackend) Name() string { return "stub" }
 
-func (s *stubBackend) QueryState() (backend.StateResult, error) {
+func (s *stubBackend) QueryState(context.Context) (backend.StateResult, error) {
 	if s.queryErr != nil {
 		return backend.StateResult{}, s.queryErr
 	}
 	return s.queryResult, nil
 }
 
-func (s *stubBackend) Apply(actions []backend.Action) error     { return nil }
-func (s *stubBackend) DryRun(actions []backend.Action) []string { return nil }
-func (s *stubBackend) Attach(session string) error              { return nil }
-func (s *stubBackend) Switch(target string) error               { return nil }
+func (s *stubBackend) Apply(context.Context, []backend.Action) error { return nil }
+func (s *stubBackend) DryRun([]backend.Action) ([]string, error)     { return nil, nil }
+func (s *stubBackend) Attach(context.Context, string) error          { return nil }
+func (s *stubBackend) Switch(context.Context, string) error          { return nil }
 
 func TestServiceRunWritesCurrentSessionWorkspace(t *testing.T) {
 	home := t.TempDir()
@@ -48,7 +49,7 @@ func TestServiceRunWritesCurrentSessionWorkspace(t *testing.T) {
 	}}
 
 	service := NewService(func(...string) (backend.Backend, error) { return stub, nil })
-	path, err := service.Run(Options{Path: outputPath})
+	path, err := service.Run(context.Background(), Options{Path: outputPath})
 	require.NoError(t, err)
 	assert.Equal(t, outputPath, path)
 
@@ -70,7 +71,7 @@ func TestSaveWorkspacePreservesMalformedDestination(t *testing.T) {
 	before := []byte("sessions: [not valid")
 	require.NoError(t, os.WriteFile(path, before, 0640))
 
-	_, err := saveWorkspace(testSaveSessions(), path, false)
+	_, err := saveWorkspace(context.Background(), testSaveSessions(), path, false)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "existing destination is invalid")
 	after, readErr := os.ReadFile(path)
@@ -86,7 +87,7 @@ func TestSaveWorkspaceRejectsOversizedDestination(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, file.Close())
 
-	_, err = saveWorkspace(testSaveSessions(), path, false)
+	_, err = saveWorkspace(context.Background(), testSaveSessions(), path, false)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "destination exceeds")
 	info, statErr := os.Stat(path)
@@ -102,7 +103,7 @@ func TestSaveWorkspaceRejectsFinalSymlink(t *testing.T) {
 	require.NoError(t, os.WriteFile(target, before, 0644))
 	require.NoError(t, os.Symlink(target, path))
 
-	_, err := saveWorkspace(testSaveSessions(), path, false)
+	_, err := saveWorkspace(context.Background(), testSaveSessions(), path, false)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "must not be a symlink")
 	after, readErr := os.ReadFile(target)
@@ -116,7 +117,7 @@ func TestSaveWorkspaceRejectsFinalSymlink(t *testing.T) {
 func TestSaveWorkspaceRejectsWrongFormatAndDirectory(t *testing.T) {
 	t.Run("removed JSON format", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "workspace.json")
-		_, err := saveWorkspace(testSaveSessions(), path, false)
+		_, err := saveWorkspace(context.Background(), testSaveSessions(), path, false)
 		require.Error(t, err)
 		assert.ErrorContains(t, err, "unsupported format")
 		_, statErr := os.Lstat(path)
@@ -126,7 +127,7 @@ func TestSaveWorkspaceRejectsWrongFormatAndDirectory(t *testing.T) {
 	t.Run("directory destination", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "workspace.yaml")
 		require.NoError(t, os.Mkdir(path, 0755))
-		_, err := saveWorkspace(testSaveSessions(), path, false)
+		_, err := saveWorkspace(context.Background(), testSaveSessions(), path, false)
 		require.Error(t, err)
 		assert.ErrorContains(t, err, "not a regular file")
 	})
@@ -136,7 +137,7 @@ func TestSaveWorkspacePreservesMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "workspace.yaml")
 	require.NoError(t, os.WriteFile(path, validSavedWorkspace(), 0600))
 
-	_, err := saveWorkspace(testSaveSessions(), path, false)
+	_, err := saveWorkspace(context.Background(), testSaveSessions(), path, false)
 	require.NoError(t, err)
 	info, err := os.Stat(path)
 	require.NoError(t, err)
@@ -159,7 +160,7 @@ func TestSaveWorkspaceDetectsConflictBeforeCommit(t *testing.T) {
 		return originalSync(file)
 	}
 
-	_, err := saveWorkspace(testSaveSessions(), path, false)
+	_, err := saveWorkspace(context.Background(), testSaveSessions(), path, false)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "changed since it was read")
 	after, readErr := os.ReadFile(path)
@@ -182,7 +183,7 @@ func TestSaveWorkspacePreservesPreviousBytesOnPreRenameFailure(t *testing.T) {
 			require.NoError(t, os.WriteFile(path, before, 0644))
 			tt.inject()
 
-			_, err := saveWorkspace(testSaveSessions(), path, false)
+			_, err := saveWorkspace(context.Background(), testSaveSessions(), path, false)
 			require.Error(t, err)
 			after, readErr := os.ReadFile(path)
 			require.NoError(t, readErr)
@@ -206,7 +207,7 @@ func TestSaveWorkspaceRollsBackWhenDirectorySyncFails(t *testing.T) {
 		return originalSyncDir(path)
 	}
 
-	_, err := saveWorkspace(testSaveSessions(), path, false)
+	_, err := saveWorkspace(context.Background(), testSaveSessions(), path, false)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "replacement rolled back")
 	after, readErr := os.ReadFile(path)
@@ -224,7 +225,7 @@ func TestSaveWorkspaceReportsUncertainStateWhenRollbackCannotBeSynced(t *testing
 	require.NoError(t, os.WriteFile(path, before, 0644))
 	syncSaveDir = func(string) error { return errors.New("directory sync failed") }
 
-	_, err := saveWorkspace(testSaveSessions(), path, false)
+	_, err := saveWorkspace(context.Background(), testSaveSessions(), path, false)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "uncertain state")
 }
@@ -236,7 +237,7 @@ func TestSaveWorkspaceRejectsUnreadableDestination(t *testing.T) {
 	require.NoError(t, os.Chmod(path, 0000))
 	t.Cleanup(func() { _ = os.Chmod(path, 0600) })
 
-	_, err := saveWorkspace(testSaveSessions(), path, false)
+	_, err := saveWorkspace(context.Background(), testSaveSessions(), path, false)
 	if err == nil {
 		t.Skip("filesystem privileges allow reading mode-000 files")
 	}
@@ -256,7 +257,7 @@ func TestSaveWorkspaceRollsBackNewFileWhenDirectorySyncFails(t *testing.T) {
 		return originalSyncDir(path)
 	}
 
-	_, err := saveWorkspace(testSaveSessions(), path, false)
+	_, err := saveWorkspace(context.Background(), testSaveSessions(), path, false)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "replacement rolled back")
 	_, statErr := os.Lstat(path)

@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -84,12 +83,13 @@ func (m model) handleActionResult(msg actionResultMsg) (tea.Model, tea.Cmd) {
 	if msg.result.Message != "" {
 		m.status = msg.result.Message
 	}
-	// A successful switch means we're done — let the user get to their session.
-	if pending != nil && pending.Type == contracts.IntentSwitch {
+	if msg.result.Navigation != "" {
+		m.navigation = msg.result.Navigation
 		return m, tea.Quit
 	}
 	if msg.result.Snapshot != nil {
-		selectedID := ""
+		existingNodeIDs := collectNodeIDs(m.snapshot.Nodes)
+		var selectedID contracts.NodeID
 		if selected, ok := m.selectedRow(); ok {
 			selectedID = selected.Node.ID
 		}
@@ -100,7 +100,7 @@ func (m model) handleActionResult(msg actionResultMsg) (tea.Model, tea.Cmd) {
 		markActivePathExpanded(m.snapshot.Nodes, m.snapshot.ActiveNodeID, m.expanded)
 		m.applyFilter()
 		m = m.reflow()
-		preferredID := preferredSelectionID(m.snapshot, pending, selectedID)
+		preferredID := preferredSelectionID(m.snapshot, pending, selectedID, existingNodeIDs)
 		if idx := findRowIndexByID(m.rows, preferredID); idx >= 0 {
 			m.cursor = idx
 		} else if idx := findRowIndexByID(m.rows, selectedID); idx >= 0 {
@@ -215,12 +215,10 @@ func (m model) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode = modeInput
 		m.input = inputState{
-			Title:      "CREATE WINDOW",
-			Prompt:     "Window name",
-			IntentType: contracts.IntentCreateWindow,
-			Payload: map[string]string{
-				"session": session,
-			},
+			Title:        "CREATE WINDOW",
+			Prompt:       "Window name",
+			IntentType:   contracts.IntentCreateWindow,
+			Session:      session,
 			SubmitStatus: submitCreatingWindow,
 		}
 		m.status = statusEnterWindowName
@@ -367,13 +365,11 @@ func (m model) updateInputMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 		intent := contracts.Intent{
 			Type:    m.input.IntentType,
+			NodeID:  m.input.NodeID,
 			Target:  m.input.Target,
-			Payload: clonePayloadMap(m.input.Payload),
+			Session: m.input.Session,
+			Name:    value,
 		}
-		if intent.Payload == nil {
-			intent.Payload = make(map[string]string)
-		}
-		intent.Payload["name"] = value
 
 		m.mode = modeBrowse
 		m.busy = true
@@ -470,8 +466,9 @@ func (m model) beginDeleteFlow() (tea.Model, tea.Cmd) {
 			Title: "DELETE WINDOW",
 			Body:  fmt.Sprintf("Delete window %q?", selected.Node.Label),
 			Intent: contracts.Intent{
-				Type:   contracts.IntentDeleteWindow,
-				Target: selected.Node.Target,
+				Type:         contracts.IntentDeleteWindow,
+				ParentNodeID: selected.Node.ParentID,
+				Target:       selected.Node.Target,
 			},
 			SubmitStatus: submitDeletingWindow,
 		}
@@ -501,6 +498,7 @@ func (m model) beginRenameFlow() (tea.Model, tea.Cmd) {
 			Title:        "RENAME SESSION",
 			Prompt:       "Session name",
 			IntentType:   contracts.IntentRenameSession,
+			NodeID:       selected.Node.ID,
 			Target:       selected.Node.Target,
 			Value:        renameInitialValue(selected),
 			SubmitStatus: submitRenamingSession,
@@ -517,6 +515,7 @@ func (m model) beginRenameFlow() (tea.Model, tea.Cmd) {
 			Title:        "RENAME WINDOW",
 			Prompt:       "Window name",
 			IntentType:   contracts.IntentRenameWindow,
+			NodeID:       selected.Node.ID,
 			Target:       selected.Node.Target,
 			Value:        renameInitialValue(selected),
 			SubmitStatus: submitRenamingWindow,
@@ -529,7 +528,7 @@ func (m model) beginRenameFlow() (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m model) selectedSessionTarget() string {
+func (m model) selectedSessionTarget() contracts.BackendTarget {
 	selected, ok := m.selectedRow()
 	if !ok {
 		return ""
@@ -538,15 +537,10 @@ func (m model) selectedSessionTarget() string {
 }
 
 func renameInitialValue(selected row) string {
-	label := strings.TrimSpace(selected.Node.Label)
-	if selected.Node.Kind != contracts.NodeKindWindow {
-		return label
+	if name := strings.TrimSpace(selected.Node.Name); name != "" {
+		return name
 	}
-	parts := strings.Fields(label)
-	if len(parts) <= 1 {
-		return label
-	}
-	return strings.Join(parts[1:], " ")
+	return windowDisplayName(selected.Node.Label)
 }
 
 func matchJumpStatus(m model) string {
@@ -574,7 +568,7 @@ func runIntent(dispatch DispatchFunc, intent contracts.Intent) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		result, err := dispatch(context.Background(), intent)
+		result, err := dispatch(intent)
 		return actionResultMsg{result: result, err: err}
 	}
 }

@@ -1,6 +1,7 @@
 package start
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -29,9 +30,15 @@ func NewService(detectBackend func(...string) (backend.Backend, error)) Service 
 	return Service{DetectBackend: detectBackend}
 }
 
-func (s Service) Run(opts Options) error {
+func (s Service) Run(ctx context.Context, opts Options) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	workspace, workspacePath, err := s.loadWorkspace(opts.Workspace)
 	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 
@@ -40,12 +47,12 @@ func (s Service) Run(opts Options) error {
 		return fmt.Errorf("failed to detect backend: %w", err)
 	}
 
-	p, err := buildPlan(b, workspace, opts.Force)
+	p, err := buildPlan(ctx, b, workspace, opts.Force)
 	if err != nil {
 		return err
 	}
 
-	return executePlan(b, p, workspace, workspacePath, opts.DryRun)
+	return executePlan(ctx, b, p, workspace, workspacePath, opts.DryRun)
 }
 
 func (s Service) loadWorkspace(nameOrPath string) (*manifest.Workspace, string, error) {
@@ -62,10 +69,10 @@ func (s Service) detectBackend() (backend.Backend, error) {
 	return backend.Detect()
 }
 
-func buildPlan(b backend.Backend, workspace *manifest.Workspace, force bool) (*plan.Plan, error) {
+func buildPlan(ctx context.Context, b backend.Backend, workspace *manifest.Workspace, force bool) (*plan.Plan, error) {
 	desired := converter.ManifestToState(workspace)
 
-	result, err := b.QueryState()
+	result, err := b.QueryState(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query backend state: %w\nHint: Verify tmux is running and retry, or inspect live sessions with 'hetki list sessions'", err)
 	}
@@ -89,34 +96,37 @@ func selectStrategy(force bool) plan.Strategy {
 	return &plan.MergeStrategy{}
 }
 
-func executePlan(b backend.Backend, p *plan.Plan, workspace *manifest.Workspace, workspacePath string, dryRun bool) error {
+func executePlan(ctx context.Context, b backend.Backend, p *plan.Plan, workspace *manifest.Workspace, workspacePath string, dryRun bool) error {
 	if p.IsEmpty() {
 		logger.Info("Workspace already up to date")
-		warnIfMetadataStampFails(b, workspace, workspacePath)
-		return attachToSession(b, workspace)
+		warnIfMetadataStampFails(ctx, b, workspace, workspacePath)
+		return attachToSession(ctx, b, workspace)
 	}
 
+	actions, err := toBackendActions(p.Actions)
+	if err != nil {
+		return fmt.Errorf("failed to convert plan: %w", err)
+	}
 	if dryRun {
-		printDryRun(b, p)
-		return nil
+		return printDryRun(b, actions)
 	}
 
-	if err := b.Apply(toBackendActions(p.Actions)); err != nil {
+	if err := b.Apply(ctx, actions); err != nil {
 		return fmt.Errorf("failed to execute plan: %w\nHint: Check tmux server logs or try with --dry-run to see planned actions", err)
 	}
 
-	warnIfMetadataStampFails(b, workspace, workspacePath)
+	warnIfMetadataStampFails(ctx, b, workspace, workspacePath)
 
-	return attachToSession(b, workspace)
+	return attachToSession(ctx, b, workspace)
 }
 
-func warnIfMetadataStampFails(b backend.Backend, workspace *manifest.Workspace, workspacePath string) {
-	if err := stampWorkspacePath(b, workspace, workspacePath); err != nil {
+func warnIfMetadataStampFails(ctx context.Context, b backend.Backend, workspace *manifest.Workspace, workspacePath string) {
+	if err := stampWorkspacePath(ctx, b, workspace, workspacePath); err != nil {
 		logger.Warning("workspace metadata not set: %v", err)
 	}
 }
 
-func stampWorkspacePath(b backend.Backend, workspace *manifest.Workspace, workspacePath string) error {
+func stampWorkspacePath(ctx context.Context, b backend.Backend, workspace *manifest.Workspace, workspacePath string) error {
 	path := strings.TrimSpace(workspacePath)
 	if path == "" {
 		return nil
@@ -139,53 +149,68 @@ func stampWorkspacePath(b backend.Backend, workspace *manifest.Workspace, worksp
 	if len(actions) == 0 {
 		return nil
 	}
-	if err := b.Apply(actions); err != nil {
+	if err := b.Apply(ctx, actions); err != nil {
 		return err
 	}
 	return nil
 }
 
-func printDryRun(b backend.Backend, p *plan.Plan) {
+func printDryRun(b backend.Backend, actions []backend.Action) error {
+	lines, err := b.DryRun(actions)
+	if err != nil {
+		return fmt.Errorf("failed to render dry run: %w", err)
+	}
 	logger.Info("Dry run - actions to execute:")
-	for _, line := range b.DryRun(toBackendActions(p.Actions)) {
+	for _, line := range lines {
 		logger.Plain("  %s", line)
 	}
+	return nil
 }
 
-func toBackendActions(actions []plan.Action) []backend.Action {
+func toBackendActions(actions []plan.Action) ([]backend.Action, error) {
 	result := make([]backend.Action, len(actions))
-	for i, a := range actions {
-		result[i] = toBackendAction(a)
+	for i, action := range actions {
+		if action == nil {
+			return nil, fmt.Errorf("action %d is nil", i)
+		}
+		if err := action.Validate(); err != nil {
+			return nil, fmt.Errorf("action %d is invalid: %w", i, err)
+		}
+		converted, err := toBackendAction(action)
+		if err != nil {
+			return nil, fmt.Errorf("action %d: %w", i, err)
+		}
+		result[i] = converted
 	}
-	return result
+	return result, nil
 }
 
-func toBackendAction(action plan.Action) backend.Action {
+func toBackendAction(action plan.Action) (backend.Action, error) {
 	switch a := action.(type) {
 	case plan.CreateSessionAction:
-		return backend.CreateSessionAction{Name: a.Name, WindowName: a.WindowName, Path: a.Path}
+		return backend.CreateSessionAction{Name: a.Name, WindowName: a.WindowName, Path: a.Path}, nil
 	case plan.CreateWindowAction:
-		return backend.CreateWindowAction{Session: a.Session, Name: a.Name, Path: a.Path}
+		return backend.CreateWindowAction{Session: a.Session, Name: a.Name, Path: a.Path}, nil
 	case plan.SplitPaneAction:
-		return backend.SplitPaneAction{Session: a.Session, Window: a.Window, Path: a.Path}
+		return backend.SplitPaneAction{Session: a.Session, Window: a.Window, Path: a.Path}, nil
 	case plan.SendKeysAction:
-		return backend.SendKeysAction{Session: a.Session, Window: a.Window, Pane: a.Pane, Command: a.Command}
+		return backend.SendKeysAction{Session: a.Session, Window: a.Window, Pane: a.Pane, Command: a.Command}, nil
 	case plan.KillSessionAction:
-		return backend.KillSessionAction{Name: a.Name}
+		return backend.KillSessionAction{Name: a.Name}, nil
 	case plan.KillWindowAction:
-		return backend.KillWindowAction{Session: a.Session, Window: a.Window, WindowID: a.WindowID}
+		return backend.KillWindowAction{Session: a.Session, Window: a.Window, WindowID: a.WindowID}, nil
 	case plan.SelectLayoutAction:
-		return backend.SelectLayoutAction{Session: a.Session, Window: a.Window, Layout: a.Layout}
+		return backend.SelectLayoutAction{Session: a.Session, Window: a.Window, Layout: a.Layout}, nil
 	case plan.ZoomPaneAction:
-		return backend.ZoomPaneAction{Session: a.Session, Window: a.Window, Pane: a.Pane}
+		return backend.ZoomPaneAction{Session: a.Session, Window: a.Window, Pane: a.Pane}, nil
 	default:
-		return nil
+		return nil, fmt.Errorf("unsupported plan action %T", action)
 	}
 }
 
-func attachToSession(b backend.Backend, workspace *manifest.Workspace) error {
+func attachToSession(ctx context.Context, b backend.Backend, workspace *manifest.Workspace) error {
 	if len(workspace.Sessions) > 0 {
-		return b.Attach(workspace.Sessions[0].Name)
+		return b.Attach(ctx, workspace.Sessions[0].Name)
 	}
 	return nil
 }
