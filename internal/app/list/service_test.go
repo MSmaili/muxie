@@ -2,7 +2,9 @@ package list
 
 import (
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/MSmaili/hetki/internal/backend"
 	"github.com/MSmaili/hetki/internal/manifest"
@@ -66,6 +68,57 @@ func TestServiceRunWorkspacesReturnsPartialResultsAndLoadErrors(t *testing.T) {
 	result, err := service.Run(Options{IncludeSessions: true})
 	assert.Equal(t, []Item{{Name: "valid:dev"}}, result.Items)
 	require.EqualError(t, err, "workspace \"broken-a\" (/broken-a.yaml): invalid manifest\nworkspace \"broken-b\" (/broken-b.yaml): invalid manifest")
+}
+
+func TestServiceRunWorkspacesBoundsConcurrentLoads(t *testing.T) {
+	const total = workspaceLoadLimit + 2
+	paths := make(map[string]string, total)
+	for i := range total {
+		name := fmt.Sprintf("workspace-%02d", i)
+		paths[name] = "/" + name + ".yaml"
+	}
+
+	started := make(chan struct{}, total)
+	release := make(chan struct{})
+	released := false
+	defer func() {
+		if !released {
+			close(release)
+		}
+	}()
+
+	service := Service{
+		GetConfigDir:   func() (string, error) { return "/config", nil },
+		ScanWorkspaces: func(string) (map[string]string, error) { return paths, nil },
+		LoadWorkspace: func(string) (*manifest.Workspace, error) {
+			started <- struct{}{}
+			<-release
+			return &manifest.Workspace{Sessions: []manifest.Session{{Name: "dev"}}}, nil
+		},
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := service.Run(Options{IncludeSessions: true})
+		done <- err
+	}()
+
+	for range workspaceLoadLimit {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("workspace loads did not reach concurrency limit")
+		}
+	}
+	select {
+	case <-started:
+		t.Fatal("workspace loads exceeded concurrency limit")
+	default:
+	}
+
+	close(release)
+	released = true
+	require.NoError(t, <-done)
 }
 
 func TestServiceRunSessionsReturnsWindowAndPaneState(t *testing.T) {

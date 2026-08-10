@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	ModeWorkspaces = "workspaces"
-	ModeSessions   = "sessions"
+	ModeWorkspaces     = "workspaces"
+	ModeSessions       = "sessions"
+	workspaceLoadLimit = 8
 )
 
 type Options struct {
@@ -90,6 +91,7 @@ func (s Service) listWorkspaceFiles(opts Options) (Result, error) {
 		results    = make(map[string]*manifest.Workspace)
 		loadErrors = make(map[string]error)
 	)
+	g.SetLimit(workspaceLoadLimit)
 
 	for _, wname := range names {
 		name, path := wname, paths[wname]
