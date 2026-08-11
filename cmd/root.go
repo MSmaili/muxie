@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 
 	"github.com/MSmaili/hetki/internal/backend"
@@ -36,7 +37,26 @@ It supports:
 }
 
 func init() {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		applyBuildInfo(info)
+	}
+	rootCmd.Version = Version
 	rootCmd.SetVersionTemplate(fmt.Sprintf("hetki version %s\ncommit: %s\nbuilt: %s\n", Version, GitCommit, BuildDate))
+}
+
+func applyBuildInfo(info *debug.BuildInfo) {
+	if Version == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		Version = info.Main.Version
+	}
+	if GitCommit != "unknown" {
+		return
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "vcs.revision" {
+			GitCommit = setting.Value
+			return
+		}
+	}
 }
 
 func commandSignalContext() (context.Context, context.CancelFunc) {

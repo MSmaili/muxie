@@ -3,11 +3,11 @@ package update
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -34,14 +34,14 @@ func awaitUpdateChannel[T any](t *testing.T, ch <-chan T) T {
 type stubUpdater struct {
 	dryRunCalls int
 	updateCalls int
-	lastVersion string
+	lastTarget  Target
 }
 
-func (s *stubUpdater) Name() string { return "stub" }
-func (s *stubUpdater) DryRun()      { s.dryRunCalls++ }
-func (s *stubUpdater) Update(_ context.Context, version string) error {
+func (s *stubUpdater) Name() string    { return "stub" }
+func (s *stubUpdater) DryRun(_ Target) { s.dryRunCalls++ }
+func (s *stubUpdater) Update(_ context.Context, target Target) error {
 	s.updateCalls++
-	s.lastVersion = version
+	s.lastTarget = target
 	return nil
 }
 
@@ -80,7 +80,7 @@ func TestDownloadToFileCancelsHTTP(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- downloadToFile(ctx, server.URL, file) }()
+	go func() { done <- downloadToFile(ctx, server.URL, file, 1<<20) }()
 
 	awaitUpdateChannel(t, started)
 	cancel()
@@ -108,8 +108,10 @@ func TestGoUpdaterCancelsProcessTree(t *testing.T) {
 	t.Setenv("HETKI_CHILD_PID", pidPath)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	exePath := filepath.Join(bin, "hetki")
+	fakeBinary(t, exePath, "v1.0.0")
 	done := make(chan error, 1)
-	go func() { done <- (&GoUpdater{}).Update(ctx, "") }()
+	go func() { done <- (&GoUpdater{exePath: exePath}).Update(ctx, testTarget("v1.2.3")) }()
 	var earlyErr error
 	require.Eventually(t, func() bool {
 		select {
@@ -131,11 +133,38 @@ func TestGoUpdaterCancelsProcessTree(t *testing.T) {
 
 	updateErr := awaitUpdateChannel(t, done)
 	require.ErrorIs(t, updateErr, context.Canceled)
-	var exitErr *exec.ExitError
-	require.ErrorAs(t, updateErr, &exitErr)
 	require.Eventually(t, func() bool {
 		return errors.Is(syscall.Kill(pid, 0), syscall.ESRCH)
 	}, 5*time.Second, 10*time.Millisecond, "child process %d outlived updater", pid)
+}
+
+func TestDirectorySizeExceedsBound(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "artifact"), make([]byte, 11), 0600))
+
+	exceeded, err := directorySizeExceeds(dir, 10)
+	require.NoError(t, err)
+	assert.True(t, exceeded)
+	exceeded, err = directorySizeExceeds(dir, 11)
+	require.NoError(t, err)
+	assert.False(t, exceeded)
+}
+
+func TestCommandOutputKillsInheritedPipeDescendant(t *testing.T) {
+	dir := t.TempDir()
+	script, pidPath := filepath.Join(dir, "leak-output"), filepath.Join(dir, "child.pid")
+	require.NoError(t, os.WriteFile(script, []byte("#!/bin/sh\nsleep 10 &\necho $! > \"$1\"\necho done\n"), 0755))
+	started := time.Now()
+
+	_, err := commandOutput(context.Background(), time.Second, 1024, script, pidPath)
+
+	require.Error(t, err)
+	assert.Less(t, time.Since(started), 4*time.Second)
+	pidBytes, readErr := os.ReadFile(pidPath)
+	require.NoError(t, readErr)
+	pid, parseErr := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
+	require.NoError(t, parseErr)
+	require.Eventually(t, func() bool { return errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) }, time.Second, 10*time.Millisecond)
 }
 
 func TestServiceRunDryRunUsesUpdaterDryRun(t *testing.T) {
@@ -144,13 +173,11 @@ func TestServiceRunDryRunUsesUpdaterDryRun(t *testing.T) {
 		SetVerbose:       func(bool) {},
 		Executable:       func() (string, error) { return "/tmp/hetki", nil },
 		DetermineUpdater: func(string) (Updater, error) { return updater, nil },
-		GetLatestVersion: func(context.Context) (string, error) {
-			t.Fatal("GetLatestVersion should not be called in dry-run mode")
-			return "", nil
-		},
+		ResolveTarget:    func(context.Context, Options) (string, error) { return "v1.2.3", nil },
+		ResolveCommit:    func(context.Context, string) (string, error) { return testCommit, nil },
 	}
 
-	err := service.Run(context.Background(), Options{DryRun: true})
+	err := service.Run(context.Background(), Options{CurrentVersion: "v1.0.0", DryRun: true})
 	require.NoError(t, err)
 	assert.Equal(t, 1, updater.dryRunCalls)
 	assert.Zero(t, updater.updateCalls)
@@ -162,12 +189,129 @@ func TestServiceRunSkipsUpdateWhenAlreadyLatest(t *testing.T) {
 		SetVerbose:       func(bool) {},
 		Executable:       func() (string, error) { return "/tmp/hetki", nil },
 		DetermineUpdater: func(string) (Updater, error) { return updater, nil },
-		GetLatestVersion: func(context.Context) (string, error) { return "v1.2.3", nil },
+		ResolveTarget:    func(context.Context, Options) (string, error) { return "v1.2.3", nil },
 	}
 
 	err := service.Run(context.Background(), Options{CurrentVersion: "v1.2.3"})
 	require.NoError(t, err)
 	assert.Zero(t, updater.dryRunCalls)
 	assert.Zero(t, updater.updateCalls)
-	assert.Empty(t, updater.lastVersion)
+	assert.Empty(t, updater.lastTarget.Tag)
+}
+
+func TestServiceRunFailsClosedWhenResolutionFails(t *testing.T) {
+	updater := &stubUpdater{}
+	service := Service{
+		SetVerbose:       func(bool) {},
+		Executable:       func() (string, error) { return "/tmp/hetki", nil },
+		DetermineUpdater: func(string) (Updater, error) { return updater, nil },
+		ResolveTarget: func(context.Context, Options) (string, error) {
+			return "", errors.New("network unreachable")
+		},
+	}
+
+	err := service.Run(context.Background(), Options{CurrentVersion: "v1.0.0"})
+	require.ErrorContains(t, err, "could not resolve a release")
+	assert.Zero(t, updater.updateCalls)
+}
+
+func TestServiceRunExactVersionReinstallsAndDowngrades(t *testing.T) {
+	updater := &stubUpdater{}
+	service := Service{
+		SetVerbose:       func(bool) {},
+		Executable:       func() (string, error) { return "/tmp/hetki", nil },
+		DetermineUpdater: func(string) (Updater, error) { return updater, nil },
+		ResolveTarget: func(_ context.Context, opts Options) (string, error) {
+			assert.Equal(t, "v1.0.0", opts.TargetVersion)
+			return "v1.0.0", nil
+		},
+		ResolveCommit: func(context.Context, string) (string, error) { return testCommit, nil },
+	}
+
+	// Downgrade and reinstall are the same explicit path (D4).
+	err := service.Run(context.Background(), Options{CurrentVersion: "v1.2.3", TargetVersion: "v1.0.0"})
+	require.NoError(t, err)
+	assert.Equal(t, 1, updater.updateCalls)
+	assert.Equal(t, testTarget("v1.0.0"), updater.lastTarget)
+}
+
+func TestServiceRunRefusesPrereleaseWithoutOptIn(t *testing.T) {
+	updater := &stubUpdater{}
+	service := Service{
+		SetVerbose:       func(bool) {},
+		Executable:       func() (string, error) { return "/tmp/hetki", nil },
+		DetermineUpdater: func(string) (Updater, error) { return updater, nil },
+		ResolveTarget:    func(context.Context, Options) (string, error) { return "v1.3.0-rc.1", nil },
+	}
+
+	err := service.Run(context.Background(), Options{CurrentVersion: "v1.2.3"})
+	require.ErrorContains(t, err, "prerelease")
+	assert.Zero(t, updater.updateCalls)
+}
+
+func TestGoUpdaterBuildsToTemporaryGOBINAndReplaces(t *testing.T) {
+	bin := t.TempDir()
+	goPath := filepath.Join(bin, "go")
+	script := fmt.Sprintf(`#!/bin/sh
+[ "$GOPROXY" = direct ] && [ "$GOSUMDB" = sum.golang.org ] && [ -n "$GOMODCACHE" ] && [ "$GOCACHE" = "${GOMODCACHE%%/modcache}/gocache" ] && [ "$GOTMPDIR" = "${GOMODCACHE%%/modcache}/tmp" ] && [ -z "$GONOSUMDB" ] && [ -z "$GOPRIVATE" ] && [ -z "$GONOPROXY" ] || exit 7
+if [ "$1 $2" = "mod download" ]; then
+  printf '{"Path":"github.com/MSmaili/hetki","Version":"v1.2.3","Sum":"h1:test","Origin":{"URL":"https://github.com/MSmaili/hetki","Hash":"%s","Ref":"refs/tags/v1.2.3"}}\n'
+  exit 0
+fi
+case "$*" in *github.com/MSmaili/hetki@v1.2.3*) ;; *) exit 8 ;; esac
+case "$*" in *GitCommit=%s*) ;; *) exit 9 ;; esac
+mkdir -p "$GOBIN"
+printf '#!/bin/sh\nprintf '\''hetki version v1.2.3\\ncommit: %s\\n'\''\n' > "$GOBIN/hetki"
+chmod +x "$GOBIN/hetki"
+`, testCommit, testCommit, testCommit)
+	require.NoError(t, os.WriteFile(goPath, []byte(script), 0755))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	exePath := filepath.Join(bin, "hetki")
+	fakeBinary(t, exePath, "v1.0.0")
+
+	require.NoError(t, (&GoUpdater{exePath: exePath}).Update(context.Background(), testTarget("v1.2.3")))
+	assert.Equal(t, "v1.2.3", readScriptVersion(t, exePath))
+	assert.NoFileExists(t, exePath+".hetki-backup")
+}
+
+func TestGoUpdaterBoundsInheritedOutputDescendant(t *testing.T) {
+	bin := t.TempDir()
+	pidPath := filepath.Join(bin, "child.pid")
+	goPath := filepath.Join(bin, "go")
+	script := fmt.Sprintf(`#!/bin/sh
+if [ "$1 $2" = "mod download" ]; then
+  printf '{"Path":"github.com/MSmaili/hetki","Version":"v1.2.3","Sum":"h1:test","Origin":{"URL":"https://github.com/MSmaili/hetki","Hash":"%s","Ref":"refs/tags/v1.2.3"}}\n'
+  exit 0
+fi
+mkdir -p "$GOBIN"
+printf '#!/bin/sh\nprintf '\''hetki version v1.2.3\\ncommit: %s\\n'\''\n' > "$GOBIN/hetki"
+chmod +x "$GOBIN/hetki"
+sleep 10 & echo $! > %q
+`, testCommit, testCommit, pidPath)
+	require.NoError(t, os.WriteFile(goPath, []byte(script), 0755))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	exePath := filepath.Join(bin, "hetki")
+	fakeBinary(t, exePath, "v1.0.0")
+	started := time.Now()
+
+	err := (&GoUpdater{exePath: exePath}).Update(context.Background(), testTarget("v1.2.3"))
+
+	require.Error(t, err)
+	assert.Less(t, time.Since(started), 4*time.Second)
+	pidBytes, readErr := os.ReadFile(pidPath)
+	require.NoError(t, readErr)
+	pid, parseErr := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
+	require.NoError(t, parseErr)
+	require.Eventually(t, func() bool { return errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) }, time.Second, 10*time.Millisecond)
+	assert.Equal(t, "v1.0.0", readScriptVersion(t, exePath))
+}
+
+func TestGoUpdaterRequiresExactVersion(t *testing.T) {
+	bin := t.TempDir()
+	goPath := filepath.Join(bin, "go")
+	require.NoError(t, os.WriteFile(goPath, []byte("#!/bin/sh\nexit 0\n"), 0755))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	require.ErrorContains(t, (&GoUpdater{}).Update(context.Background(), Target{}), "exact release tag")
+	require.ErrorContains(t, (&GoUpdater{}).Update(context.Background(), Target{Tag: "main", Commit: testCommit}), "release tag")
 }

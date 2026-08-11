@@ -18,8 +18,8 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/MSmaili/hetki/cmd.Version={{.Version}}
-      - -X github.com/MSmaili/hetki/cmd.GitCommit={{.ShortCommit}}
+      - -X github.com/MSmaili/hetki/cmd.Version=v{{.Version}}
+      - -X github.com/MSmaili/hetki/cmd.GitCommit={{.FullCommit}}
       - -X github.com/MSmaili/hetki/cmd.BuildDate={{.Date}}
 
 archives:
