@@ -194,7 +194,7 @@ func TestVerifyReleaseArtifactFullFlow(t *testing.T) {
 
 	stubGh(t, "2.97.0", subjectJSON("hetki-testos-testarch", digestHex))
 	stubGitHub(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(fmt.Sprintf(`{"attestations":[{"bundle":%s}]}`, subjectJSON("hetki-testos-testarch", digestHex))))
+		fmt.Fprintf(w, `{"attestations":[{"bundle":%s}]}`, subjectJSON("hetki-testos-testarch", digestHex))
 	})
 
 	skipped, err := verifyReleaseArtifact(context.Background(), artifact, "hetki-testos-testarch", digestHex, testTarget("v1.0.0"))

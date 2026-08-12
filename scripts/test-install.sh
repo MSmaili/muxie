@@ -201,6 +201,9 @@ run_case() {
     HETKI_TEST_GH_LOG="$CASE_DIR/gh.log"
     HETKI_TEST_GO_LOG="$CASE_DIR/go.log"
     HETKI_TEST_CURL_ARGS_LOG="$CASE_DIR/curl-args.log"
+    if [[ -n "${HETKI_TEST_INSTALL_DIR_MODE:-}" ]]; then
+        chmod "$HETKI_TEST_INSTALL_DIR_MODE" "$HETKI_INSTALL_DIR"
+    fi
     : >"$HETKI_TEST_CURL_LOG"
     : >"$HETKI_TEST_GH_LOG"
     : >"$HETKI_TEST_GO_LOG"
@@ -364,6 +367,20 @@ else
     check "non-regular rejection explained" "grep -q 'non-regular installation' \"\$WORK/fifo/err.log\""
 fi
 
+echo "== unwritable destination preserves the existing installation =="
+if [[ "$(id -u)" -eq 0 ]]; then
+    note "skipped unwritable-directory probe as root"
+else
+    if HETKI_TEST_INSTALL_DIR_MODE=0555 run_case permission-denied ok latest v0.9.0; then
+        chmod 0755 "$HETKI_INSTALL_DIR"
+        FAIL=$((FAIL + 1)); note "installer should fail for an unwritable destination"
+    else
+        chmod 0755 "$HETKI_INSTALL_DIR"
+        check "old binary survives permission failure" "[[ \"\$(\"\$BIN\" --version)\" == *'version v0.9.0'* ]]"
+        check "permission failure leaves no recovery files" "[[ ! -e \"\$BIN.hetki-backup\" && ! -e \"\$BIN.hetki-update-lock\" ]]"
+    fi
+fi
+
 echo "== symlinked installation is refused =="
 if HETKI_TEST_PRESEED_SYMLINK=1 run_case symlink ok latest v0.9.0; then
     FAIL=$((FAIL + 1)); note "installer should reject a symlinked target"
@@ -425,6 +442,20 @@ if bash -c 'source "$1"; ROLLBACK_TARGET="$2/hetki"; ROLLBACK_BACKUP=""; CANDIDA
     PASS=$((PASS + 1))
 else
     FAIL=$((FAIL + 1)); note "fresh-install cleanup removed a concurrent destination"
+fi
+
+echo "== TERM after replacement restores the previous binary =="
+term_dir="$WORK/term-after-replace"
+mkdir -p "$term_dir"
+printf old >"$term_dir/old"
+printf candidate >"$term_dir/hetki"
+ln "$term_dir/old" "$term_dir/hetki.hetki-backup"
+if bash -c 'source "$1"; ROLLBACK_TARGET="$2/hetki"; ROLLBACK_BACKUP="$2/hetki.hetki-backup"; ROLLBACK_BACKUP_ID="$(file_id "$ROLLBACK_BACKUP")"; CANDIDATE_ID="$(file_id "$ROLLBACK_TARGET")"; REPLACEMENT_PENDING=4; kill -TERM $$' \
+    _ "$INSTALL_LIB" "$term_dir"; then
+    FAIL=$((FAIL + 1)); note "TERM probe should exit non-zero"
+else
+    check "TERM restored previous bytes" "[[ \"\$(cat '$term_dir/hetki')\" == old ]]"
+    check "TERM removed recovery backup" "[[ ! -e '$term_dir/hetki.hetki-backup' ]]"
 fi
 
 echo "== verified-state cleanup removes owned backup without rollback =="

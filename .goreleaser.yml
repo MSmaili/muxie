@@ -1,8 +1,6 @@
-project_name: hetki
+version: 2
 
-before:
-  hooks:
-    - go mod tidy
+project_name: hetki
 
 builds:
   - id: hetki
@@ -16,37 +14,28 @@ builds:
     goarch:
       - amd64
       - arm64
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    mod_timestamp: "{{ .CommitTimestamp }}"
     ldflags:
-      - -s -w
+      - -s -w -buildid=
       - -X github.com/MSmaili/hetki/cmd.Version=v{{.Version}}
       - -X github.com/MSmaili/hetki/cmd.GitCommit={{.FullCommit}}
-      - -X github.com/MSmaili/hetki/cmd.BuildDate={{.Date}}
+      - -X github.com/MSmaili/hetki/cmd.BuildDate={{.CommitDate}}
 
 archives:
   - id: hetki
-    format: binary
+    formats:
+      - binary
     name_template: >-
       {{ .ProjectName }}-
       {{- .Os }}-
       {{- .Arch }}
 
 checksum:
-  name_template: 'checksums.txt'
+  name_template: checksums.txt
   algorithm: sha256
-
-# Sign the checksums file with GPG (optional, requires GPG key)
-# Uncomment the following to enable GPG signing:
-# signs:
-#   - artifacts: checksum
-#     cmd: gpg
-#     args:
-#       - --batch
-#       - --local-user
-#       - "{{ .Env.GPG_FINGERPRINT }}"
-#       - --output
-#       - "${signature}"
-#       - --detach-sign
-#       - "${artifact}"
 
 changelog:
   sort: asc

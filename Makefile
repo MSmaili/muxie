@@ -20,11 +20,7 @@ clean:
 	rm -f hetki
 	rm -rf dist/
 
-# Build for multiple platforms (for releases)
+# GoReleaser is the single release definition; this target also proves that
+# two clean builds produce byte-identical artifacts.
 release:
-	mkdir -p dist
-	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/hetki-darwin-amd64 .
-	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o dist/hetki-darwin-arm64 .
-	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/hetki-linux-amd64 .
-	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o dist/hetki-linux-arm64 .
-	@echo "Release binaries built in dist/"
+	./scripts/test-release-reproducibility.sh

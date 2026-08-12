@@ -1,0 +1,14 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  exclusions:
+    rules:
+      # Existing simplification; keep visible while preventing new findings.
+      - path: internal/manifest/validator.go
+        text: "QF1001: could apply De Morgan's law"

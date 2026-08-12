@@ -7,25 +7,170 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  goreleaser:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout full history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - name: Set up Go
-        uses: actions/setup-go@v5
+          persist-credentials: false
+
+      - name: Set up exact Go version
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: stable
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run pinned lint gate
+        uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v8
+        with:
+          version: v2.13.2
+          args: --timeout=5m
+
+      - name: Lint shell with pinned ShellCheck
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+        with:
+          version: v0.11.0
+
+      - name: Verify source gates
+        run: |
+          test -z "$(gofmt -l .)"
+          go mod tidy -diff
+          go mod verify
+          go build ./...
+          go test ./...
+          go test -race ./...
+          go vet ./...
+          command -v tmux
+          go vet -tags=integration ./internal/backend/tmux ./internal/app/start ./internal/app/tui
+          go test -tags=integration ./internal/backend/tmux ./internal/app/start ./internal/app/tui
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.9
+          go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+          bash -n install.sh scripts/*.sh
+          ./scripts/validate-release-tag.sh --self-test
+          ./scripts/test-install.sh
+
+      - name: Install exact GoReleaser version
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
           distribution: goreleaser
-          version: "latest"
-          args: release --clean
+          version: v2.17.1
+          install-only: true
+
+      - name: Build every release artifact twice
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HETKI_RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_type == 'tag' && github.ref_name || '' }}
+        run: ./scripts/test-release-reproducibility.sh
+
+      - name: Upload verified release artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-dist
+          path: |
+            dist/hetki-darwin-amd64
+            dist/hetki-darwin-arm64
+            dist/hetki-linux-amd64
+            dist/hetki-linux-arm64
+            dist/checksums.txt
+          if-no-files-found: error
+          retention-days: 1
+
+  native-smoke:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout tests
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up exact Go version
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Smoke-test native artifact and install paths
+        shell: bash
+        run: |
+          case "${RUNNER_OS}/${RUNNER_ARCH}" in
+            Linux/X64) artifact=dist/hetki-linux-amd64 ;;
+            Linux/ARM64) artifact=dist/hetki-linux-arm64 ;;
+            macOS/X64) artifact=dist/hetki-darwin-amd64 ;;
+            macOS/ARM64) artifact=dist/hetki-darwin-arm64 ;;
+            *) echo "unsupported runner ${RUNNER_OS}/${RUNNER_ARCH}" >&2; exit 1 ;;
+          esac
+          install -m 0755 "$artifact" "$RUNNER_TEMP/hetki"
+          output="$("$RUNNER_TEMP/hetki" --version)"
+          grep -Fx "commit: ${GITHUB_SHA}" <<<"$output"
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF_TYPE" == tag ]]; then
+            grep -Fx "hetki version ${GITHUB_REF_NAME}" <<<"$output"
+          fi
+          go test ./internal/app/update
+          ./scripts/test-install.sh
+
+  attest:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs:
+      - build
+      - native-smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Attest release checksums
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-checksums: dist/checksums.txt
+
+  publish:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: attest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download attested release artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Publish immutable tag artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          flags=(--verify-tag --title "${GITHUB_REF_NAME}" --generate-notes)
+          [[ "${GITHUB_REF_NAME}" == *-* ]] && flags+=(--prerelease)
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/hetki-darwin-amd64 \
+            dist/hetki-darwin-arm64 \
+            dist/hetki-linux-amd64 \
+            dist/hetki-linux-arm64 \
+            dist/checksums.txt \
+            "${flags[@]}"

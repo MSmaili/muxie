@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # single-quoted snippets run in nested shells
 #
 # Installer for hetki (D4 policy)
 #
@@ -227,10 +228,10 @@ show_path_instructions() {
 
     case "$SHELL" in
         */zsh)
-            shell_rc="~/.zshrc"
+            shell_rc="$HOME/.zshrc"
             ;;
         */bash)
-            shell_rc="~/.bashrc"
+            shell_rc="$HOME/.bashrc"
             ;;
         *)
             shell_rc="your shell configuration file"
@@ -325,7 +326,7 @@ split_top_level_objects() {
 }
 
 json_string_field() {
-    local rest="${1#*\"$2\"}"
+    local rest="${1#*\""$2"\"}"
     [[ "$rest" != "$1" ]] || return 1
     rest="${rest#*:}"
     rest="${rest#*\"}"
@@ -333,10 +334,10 @@ json_string_field() {
 }
 
 json_bool_field() {
-    local rest="${1#*\"$2\"}" value
+    local rest="${1#*\""$2"\"}" value
     [[ "$rest" != "$1" ]] || return 1
     rest="${rest#*:}"
-    rest="${rest#${rest%%[![:space:]]*}}"
+    rest="${rest#"${rest%%[![:space:]]*}"}"
     rest="${rest%%,*}"
     value="${rest%%\}*}"
     value="${value%"${value##*[![:space:]]}"}"
@@ -410,8 +411,9 @@ resolve_commit() {
         type="$(sed -n 's/.*"object"[[:space:]]*:[[:space:]]*{[^}]*"type"[[:space:]]*:[[:space:]]*"\([a-z]*\)".*/\1/p' "$metadata")"
         depth=$((depth + 1))
     done
-    [[ "$type" == "commit" ]] && valid_commit "$sha" \
-        || error "Release tag '$tag' does not resolve to a valid commit"
+    if [[ "$type" != "commit" ]] || ! valid_commit "$sha"; then
+        error "Release tag '$tag' does not resolve to a valid commit"
+    fi
     RESOLVED_COMMIT="$sha"
 }
 

@@ -4,13 +4,18 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -106,6 +111,35 @@ func TestReplaceExecutableCancellationBeforeRenameLeavesDestinationUntouched(t *
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, "v1.0.0", readScriptVersion(t, exe))
 	assert.NoFileExists(t, exe+".hetki-backup")
+}
+
+func TestReplaceExecutableCancellationDuringVerificationRollsBack(t *testing.T) {
+	dir := t.TempDir()
+	exe, candidate := filepath.Join(dir, "hetki"), filepath.Join(dir, "candidate")
+	marker, pidPath := filepath.Join(dir, "started"), filepath.Join(dir, "child.pid")
+	fakeBinary(t, exe, "v1.0.0")
+	script := fmt.Sprintf("#!/bin/sh\nsleep 30 &\necho $! > %q\ntouch %q\nwait\nprintf 'hetki version v1.1.0\\ncommit: %s\\n'\n", pidPath, marker, testCommit)
+	require.NoError(t, os.WriteFile(candidate, []byte(script), 0755))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- replaceExecutable(ctx, candidate, exe, testTarget("v1.1.0")) }()
+	require.Eventually(t, func() bool { _, err := os.Stat(marker); return err == nil }, time.Second, 10*time.Millisecond)
+
+	cancel()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(3 * time.Second):
+		t.Fatal("replacement did not stop after cancellation")
+	}
+	assert.Equal(t, "v1.0.0", readScriptVersion(t, exe))
+	assert.NoFileExists(t, exe+".hetki-backup")
+	assert.NoFileExists(t, exe+".hetki-update-lock")
+	pidBytes, err := os.ReadFile(pidPath)
+	require.NoError(t, err)
+	pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) }, time.Second, 10*time.Millisecond)
 }
 
 func TestReplaceExecutableRefusesConcurrentUpdateLock(t *testing.T) {
@@ -221,7 +255,7 @@ func TestBinaryUpdaterUpdateFullFlow(t *testing.T) {
 
 	stubGh(t, "2.97.0", subjectJSON(binaryName, digestHex))
 	stubGitHub(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(fmt.Sprintf(`{"attestations":[{"bundle":%s}]}`, subjectJSON(binaryName, digestHex))))
+		fmt.Fprintf(w, `{"attestations":[{"bundle":%s}]}`, subjectJSON(binaryName, digestHex))
 	})
 
 	previous := githubReleaseURL

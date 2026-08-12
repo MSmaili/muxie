@@ -1,6 +1,6 @@
 module github.com/MSmaili/hetki
 
-go 1.25.3
+go 1.25.13
 
 require (
 	charm.land/bubbles/v2 v2.1.0
@@ -8,7 +8,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.3
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/fatih/color v1.18.0
-	github.com/klauspost/compress v1.18.4
+	github.com/klauspost/compress v1.18.7
 	github.com/sahilm/fuzzy v0.1.3
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1

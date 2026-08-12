@@ -9,17 +9,111 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up exact Go version
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify formatting and modules
+        run: |
+          test -z "$(gofmt -l .)"
+          go mod tidy -diff
+          go mod verify
+
+      - name: Build and vet
+        run: |
+          go build ./...
+          go vet ./...
+
+      - name: Run unit and race tests
+        run: |
+          go test ./...
+          go test -race ./...
+
+      - name: Run isolated tmux integration tests
+        if: runner.os == 'Linux'
+        run: |
+          command -v tmux
+          go vet -tags=integration ./internal/backend/tmux ./internal/app/start ./internal/app/tui
+          go test -tags=integration ./internal/backend/tmux ./internal/app/start ./internal/app/tui
+
+      - name: Run installer harness
+        run: |
+          bash -n install.sh scripts/*.sh
+          ./scripts/validate-release-tag.sh --self-test
+          ./scripts/test-install.sh
+
+  security-and-workflow:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          go-version: stable
+          persist-credentials: false
 
-      - name: Run tests
-        run: go test ./...
+      - name: Set up exact Go version
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run pinned lint gate
+        uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v8
+        with:
+          version: v2.13.2
+          args: --timeout=5m
+
+      - name: Validate workflows with pinned actionlint
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.9
+
+      - name: Lint shell with pinned ShellCheck
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+        with:
+          version: v0.11.0
+
+      - name: Scan reachable vulnerabilities with pinned govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+
+  release-reproducibility:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up exact Go version
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install exact GoReleaser version
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
+        with:
+          distribution: goreleaser
+          version: v2.17.1
+          install-only: true
+
+      - name: Prove release artifacts are reproducible
+        run: ./scripts/test-release-reproducibility.sh
