@@ -8,11 +8,12 @@ import (
 
 var saveCmd = &cobra.Command{
 	Use:   "save [.]",
-	Short: "Save current tmux session to workspace",
-	Long: `Save the current tmux session state to a workspace configuration file.
+	Short: "Save tmux session state to a workspace file",
+	Long: `Save tmux session state to a workspace configuration file.
 
-By default, saves the current session. Use --all to save all sessions.
-Use -n to specify a workspace name or -p for an explicit path.`,
+The destination is required: use -n for a named workspace, -p for an
+explicit path, or '.' to save into a local .hetki.y[a]ml file. Without
+--all, the currently attached session is saved; --all saves every session.`,
 	RunE: runSave,
 }
 
