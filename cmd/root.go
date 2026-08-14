@@ -26,6 +26,8 @@ var rootCmd = &cobra.Command{
 	Short:         "hetki - Terminal Multiplexer Session Manager",
 	SilenceUsage:  true,
 	SilenceErrors: true,
+	Args:          cobra.NoArgs,
+	RunE:          runBareHetki,
 	Long: `hetki is a terminal multiplexer session manager that helps you manage complex tmux sessions with less manual setup.
 
 It supports:

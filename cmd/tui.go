@@ -1,24 +1,24 @@
 package cmd
 
 import (
+	"context"
+	"os"
+
 	apptui "github.com/MSmaili/hetki/internal/app/tui"
+	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 )
 
-var tuiCmd = &cobra.Command{
-	Use:   "tui",
-	Short: "Open an interactive TUI for live tmux sessions",
-	Long: `Open an interactive terminal UI for browsing live sessions, windows, and panes.
+var (
+	isTerminal = term.IsTerminal
+	openTUI    = func(ctx context.Context) error {
+		return apptui.NewService(detectBackend).Run(ctx)
+	}
+)
 
-This command is live-first and reads from the running tmux server.`,
-	RunE: runTUI,
-}
-
-func init() {
-	rootCmd.AddCommand(tuiCmd)
-}
-
-func runTUI(cmd *cobra.Command, args []string) error {
-	service := apptui.NewService(detectBackend)
-	return service.Run(cmd.Context())
+func runBareHetki(cmd *cobra.Command, _ []string) error {
+	if !isTerminal(os.Stdin.Fd()) || !isTerminal(os.Stdout.Fd()) {
+		return cmd.Help()
+	}
+	return openTUI(cmd.Context())
 }
