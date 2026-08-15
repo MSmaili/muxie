@@ -42,16 +42,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// In modes that capture text input, do NOT honor the global Quit key (q).
-		// Filter/input modes get first crack; confirm/browse still see the global binds.
+		// Overlays and text input own their keys before browse-mode shortcuts.
 		if m.mode == modeFilter {
 			return m.updateFilterMode(msg)
 		}
 		if m.mode == modeInput {
 			return m.updateInputMode(msg)
 		}
+		if m.mode == modeConfirm {
+			return m.updateConfirmMode(msg)
+		}
 
-		// Browse or confirm: global shortcuts are safe.
 		if key.Matches(msg, m.keys.Quit) {
 			return m, tea.Quit
 		}
@@ -59,10 +60,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.helpOpen = true
 			m.status = statusHelp
 			return m, nil
-		}
-
-		if m.mode == modeConfirm {
-			return m.updateConfirmMode(msg)
 		}
 		return m.updateBrowseMode(msg)
 	}

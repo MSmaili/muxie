@@ -7,16 +7,28 @@ import (
 )
 
 func (m *model) applyFilter() {
+	var selectedID contracts.NodeID
+	if selected, ok := m.selectedRow(); ok {
+		selectedID = selected.Node.ID
+	}
+
 	query := m.filterQuery()
 	if query == "" {
 		m.rows = flatten(m.snapshot.Nodes, m.expanded, false)
-		m.cursor = clampCursor(m.cursor, len(m.rows))
+		if idx := findRowIndexByID(m.rows, selectedID); idx >= 0 {
+			m.cursor = idx
+		} else {
+			m.cursor = clampCursor(m.cursor, len(m.rows))
+		}
 		return
 	}
 
 	allRows := flatten(m.snapshot.Nodes, m.expanded, true)
 	m.rows = keepMatchesWithAncestors(allRows, query)
 	m.cursor = bestMatchCursor(m.rows)
+	if idx := findRowIndexByID(m.rows, selectedID); idx >= 0 && m.rows[idx].score > 0 {
+		m.cursor = idx
+	}
 }
 
 // keepMatchesWithAncestors returns matching rows plus the ancestors needed to
