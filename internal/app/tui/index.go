@@ -1,0 +1,51 @@
+package tui
+
+import (
+	"fmt"
+
+	"github.com/MSmaili/hetki/internal/tui/list"
+)
+
+type liveItemKind uint8
+
+const (
+	liveSession liveItemKind = iota + 1
+	liveWindow
+)
+
+type liveItem struct {
+	ID            list.ItemID
+	ParentID      list.ItemID
+	Kind          liveItemKind
+	Label         string
+	Name          string
+	Target        string
+	SessionTarget string
+}
+
+type itemIndex map[list.ItemID]liveItem
+
+func validateProjection(snapshot list.Snapshot, index itemIndex) error {
+	if err := list.Validate(snapshot); err != nil {
+		return err
+	}
+	ids := list.IDs(snapshot.Items)
+	if len(ids) != len(index) {
+		return fmt.Errorf("item projection has %d items but index has %d", len(ids), len(index))
+	}
+	for id := range ids {
+		item, exists := index[id]
+		if !exists {
+			return fmt.Errorf("item %q is missing from owner index", id)
+		}
+		if item.ID != id {
+			return fmt.Errorf("owner index entry %q contains item %q", id, item.ID)
+		}
+	}
+	for id := range index {
+		if _, exists := ids[id]; !exists {
+			return fmt.Errorf("owner index item %q is missing from projection", id)
+		}
+	}
+	return nil
+}

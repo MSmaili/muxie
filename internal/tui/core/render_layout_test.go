@@ -1,4 +1,4 @@
-package components
+package core
 
 import (
 	"strings"
@@ -17,7 +17,6 @@ func TestHeadersAndModalsSanitizeAndFit(t *testing.T) {
 			RenderSearchBar(SearchBarProps{Width: width, Filter: unsafe, Right: unsafe}),
 			RenderInputModal(InputModalProps{LineWidth: width, Title: "INPUT", Prompt: unsafe, Value: unsafe, ModalStyle: border}),
 			RenderConfirmModal(ConfirmModalProps{LineWidth: width, Title: "CONFIRM", Body: unsafe, ModalStyle: border}),
-			RenderHelpOverlay(HelpOverlayProps{LineWidth: width, Title: "HELP", Hint: unsafe, Sections: []HelpSection{{Title: "KEYS", Entries: []HelpEntry{{Keys: "?", Desc: unsafe}}}}, OverlayStyle: border}),
 		}
 		for _, output := range rendered {
 			if strings.Contains(output, "owned") || strings.Contains(output, "\nnext") {

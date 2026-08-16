@@ -1,65 +1,131 @@
 package core
 
 import (
+	"fmt"
+	"strings"
+
 	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
 )
 
+type KeyMode string
+
+const (
+	KeyModeNormal  KeyMode = "normal"
+	KeyModeFilter  KeyMode = "filter"
+	KeyModeInput   KeyMode = "input"
+	KeyModeConfirm KeyMode = "confirm"
+)
+
+type Binding struct {
+	Action ActionID
+	Keys   []string
+}
+
 type KeyMap struct {
-	Quit          key.Binding
-	Up            key.Binding
-	Down          key.Binding
-	Top           key.Binding
-	Bottom        key.Binding
-	PageUp        key.Binding
-	PageDown      key.Binding
-	Search        key.Binding
-	Help          key.Binding
-	NextMatch     key.Binding
-	PrevMatch     key.Binding
-	ClearFilter   key.Binding
-	CreateSession key.Binding
-	CreateWindow  key.Binding
-	Rename        key.Binding
-	Delete        key.Binding
-	Expand        key.Binding
-	Collapse      key.Binding
-	ExpandAll     key.Binding
-	CollapseAll   key.Binding
-	Backspace     key.Binding
-	DeleteWord    key.Binding
-	DeleteToStart key.Binding
-	Cancel        key.Binding
-	Confirm       key.Binding
-	Refresh       key.Binding
+	bindings map[KeyMode]map[ActionID]key.Binding
+}
+
+func ResolveKeyMap(bindings map[KeyMode][]Binding) (KeyMap, error) {
+	resolved := KeyMap{bindings: make(map[KeyMode]map[ActionID]key.Binding, len(bindings))}
+	for mode, modeBindings := range bindings {
+		actions := make(map[ActionID]key.Binding, len(modeBindings))
+		used := make(map[string]ActionID)
+		for _, binding := range modeBindings {
+			if binding.Action == "" || len(binding.Keys) == 0 {
+				return KeyMap{}, fmt.Errorf("mode %q has an empty action or key list", mode)
+			}
+			if _, exists := actions[binding.Action]; exists {
+				return KeyMap{}, fmt.Errorf("mode %q defines action %q more than once", mode, binding.Action)
+			}
+			keys := make([]string, len(binding.Keys))
+			for i, raw := range binding.Keys {
+				value := strings.TrimSpace(raw)
+				if value == "" {
+					return KeyMap{}, fmt.Errorf("mode %q action %q has an empty key", mode, binding.Action)
+				}
+				if value == "ctrl+c" {
+					return KeyMap{}, fmt.Errorf("ctrl+c is reserved for emergency quit")
+				}
+				if previous, exists := used[value]; exists {
+					return KeyMap{}, fmt.Errorf("mode %q key %q is assigned to %q and %q", mode, value, previous, binding.Action)
+				}
+				used[value] = binding.Action
+				keys[i] = value
+			}
+			actions[binding.Action] = key.NewBinding(key.WithKeys(keys...))
+		}
+		resolved.bindings[mode] = actions
+	}
+	return resolved, nil
 }
 
 func DefaultKeyMap() KeyMap {
-	return KeyMap{
-		Quit:          key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
-		Up:            key.NewBinding(key.WithKeys("up", "k", "ctrl+p"), key.WithHelp("k/↑/ctrl+p", "up")),
-		Down:          key.NewBinding(key.WithKeys("down", "j", "ctrl+n"), key.WithHelp("j/↓/ctrl+n", "down")),
-		Top:           key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "top")),
-		Bottom:        key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "bottom")),
-		PageUp:        key.NewBinding(key.WithKeys("pgup", "u"), key.WithHelp("u", "page up")),
-		PageDown:      key.NewBinding(key.WithKeys("pgdown", "d"), key.WithHelp("d", "page down")),
-		Search:        key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-		Help:          key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-		NextMatch:     key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "next match")),
-		PrevMatch:     key.NewBinding(key.WithKeys("N"), key.WithHelp("N", "prev match")),
-		ClearFilter:   key.NewBinding(key.WithKeys("ctrl+l"), key.WithHelp("ctrl+l", "clear filter")),
-		CreateSession: key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "new session")),
-		CreateWindow:  key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "new window")),
-		Rename:        key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "rename")),
-		Delete:        key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "delete")),
-		Expand:        key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("l", "expand")),
-		Collapse:      key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("h", "collapse")),
-		ExpandAll:     key.NewBinding(key.WithKeys("L"), key.WithHelp("L", "expand all")),
-		CollapseAll:   key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "collapse all")),
-		Backspace:     key.NewBinding(key.WithKeys("backspace", "delete")),
-		DeleteWord:    key.NewBinding(key.WithKeys("ctrl+w"), key.WithHelp("ctrl+w", "delete word")),
-		DeleteToStart: key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "clear line")),
-		Cancel:        key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
-		Confirm:       key.NewBinding(key.WithKeys("enter", "ctrl+y"), key.WithHelp("enter/ctrl+y", "confirm")),
-		Refresh:       key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+	keymap, err := ResolveKeyMap(map[KeyMode][]Binding{
+		KeyModeNormal: {
+			{Action: ActionQuit, Keys: []string{"q"}},
+			{Action: ActionMoveUp, Keys: []string{"up", "k", "ctrl+p"}},
+			{Action: ActionMoveDown, Keys: []string{"down", "j", "ctrl+n"}},
+			{Action: ActionMoveTop, Keys: []string{"g"}},
+			{Action: ActionMoveBottom, Keys: []string{"G"}},
+			{Action: ActionPageUp, Keys: []string{"pgup", "u"}},
+			{Action: ActionPageDown, Keys: []string{"pgdown", "d"}},
+			{Action: ActionFilter, Keys: []string{"/"}},
+			{Action: ActionNextMatch, Keys: []string{"n"}},
+			{Action: ActionPrevMatch, Keys: []string{"N"}},
+			{Action: ActionClearFilter, Keys: []string{"ctrl+l"}},
+			{Action: ActionCreateSession, Keys: []string{"s"}},
+			{Action: ActionCreateWindow, Keys: []string{"a"}},
+			{Action: ActionRename, Keys: []string{"e"}},
+			{Action: ActionDelete, Keys: []string{"x"}},
+			{Action: ActionExpand, Keys: []string{"right", "l"}},
+			{Action: ActionCollapse, Keys: []string{"left", "h"}},
+			{Action: ActionExpandAll, Keys: []string{"L"}},
+			{Action: ActionCollapseAll, Keys: []string{"H"}},
+			{Action: ActionRefresh, Keys: []string{"r"}},
+			{Action: ActionOpen, Keys: []string{"enter", "ctrl+y"}},
+		},
+		KeyModeFilter: {
+			{Action: ActionCancel, Keys: []string{"esc"}},
+			{Action: ActionConfirm, Keys: []string{"enter", "ctrl+y"}},
+			{Action: ActionMoveUp, Keys: []string{"up", "ctrl+p"}},
+			{Action: ActionMoveDown, Keys: []string{"down", "ctrl+n"}},
+			{Action: ActionPageUp, Keys: []string{"pgup"}},
+			{Action: ActionPageDown, Keys: []string{"pgdown"}},
+			{Action: ActionBackspace, Keys: []string{"backspace", "delete"}},
+			{Action: ActionDeleteWord, Keys: []string{"ctrl+w"}},
+			{Action: ActionDeleteToStart, Keys: []string{"ctrl+u"}},
+			{Action: ActionClearFilter, Keys: []string{"ctrl+l"}},
+		},
+		KeyModeInput: {
+			{Action: ActionCancel, Keys: []string{"esc"}},
+			{Action: ActionConfirm, Keys: []string{"enter", "ctrl+y"}},
+			{Action: ActionBackspace, Keys: []string{"backspace", "delete"}},
+			{Action: ActionDeleteWord, Keys: []string{"ctrl+w"}},
+			{Action: ActionDeleteToStart, Keys: []string{"ctrl+u"}},
+		},
+		KeyModeConfirm: {
+			{Action: ActionCancel, Keys: []string{"esc", "n", "N"}},
+			{Action: ActionConfirm, Keys: []string{"enter", "ctrl+y", "y", "Y"}},
+		},
+	})
+	if err != nil {
+		panic(err)
 	}
+	return keymap
+}
+
+func (k KeyMap) IsZero() bool { return k.bindings == nil }
+
+func (k KeyMap) Keys(mode KeyMode, action ActionID) []string {
+	binding, ok := k.bindings[mode][action]
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), binding.Keys()...)
+}
+
+func (k KeyMap) Matches(mode KeyMode, action ActionID, msg tea.KeyPressMsg) bool {
+	binding, ok := k.bindings[mode][action]
+	return ok && key.Matches(msg, binding)
 }

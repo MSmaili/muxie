@@ -14,35 +14,29 @@ import (
 	"time"
 
 	backendtmux "github.com/MSmaili/hetki/internal/backend/tmux"
-	"github.com/MSmaili/hetki/internal/tui/contracts"
 	"github.com/MSmaili/hetki/internal/tui/core"
+	"github.com/MSmaili/hetki/internal/tui/list"
 	"github.com/stretchr/testify/require"
 )
 
 const ptyHelperEnv = "HETKI_TUI_PTY_HELPER"
 
 type ptyDriver struct {
-	navigate func(context.Context, contracts.BackendTarget) error
+	navigate func(context.Context, core.BackendTarget) error
 }
 
-func (ptyDriver) Load(context.Context) (contracts.Snapshot, error) {
-	return contracts.Snapshot{
-		Nodes: []contracts.Node{{
-			ID:     "session:dev",
-			Kind:   contracts.NodeKindSession,
-			Label:  "dev",
-			Name:   "dev",
-			Target: "dev",
-		}},
-		Capabilities: map[contracts.Capability]bool{contracts.CapabilitySwitch: true},
-	}, nil
+func (ptyDriver) Load(context.Context) (list.Snapshot, error) {
+	return list.Snapshot{Items: []list.Item{{
+		ID: "session:dev", Primary: "dev",
+		SearchFields: []list.SearchField{{Tier: list.SearchPrimary, Text: "dev"}},
+	}}}, nil
 }
 
-func (ptyDriver) Execute(_ context.Context, intent contracts.Intent) (contracts.ActionResult, error) {
-	return contracts.ActionResult{Navigation: intent.Target}, nil
+func (ptyDriver) Execute(_ context.Context, _ core.ActionRequest) (core.ActionResult, error) {
+	return core.ActionResult{Navigation: "dev"}, nil
 }
 
-func (d ptyDriver) Navigate(ctx context.Context, target contracts.BackendTarget) error {
+func (d ptyDriver) Navigate(ctx context.Context, target core.BackendTarget) error {
 	return d.navigate(ctx, target)
 }
 
@@ -50,10 +44,10 @@ func TestTerminalRestoredBeforeNavigation(t *testing.T) {
 	if os.Getenv(ptyHelperEnv) == "1" {
 		b, err := backendtmux.NewBackend()
 		require.NoError(t, err)
-		driver := ptyDriver{navigate: func(ctx context.Context, target contracts.BackendTarget) error {
+		driver := ptyDriver{navigate: func(ctx context.Context, target core.BackendTarget) error {
 			return b.Switch(ctx, string(target))
 		}}
-		require.NoError(t, (Service{Driver: driver, RunUI: core.Run}).Run(context.Background()))
+		require.NoError(t, (Service{Driver: driver, RunUI: core.RunWithKeyMap}).Run(context.Background()))
 		return
 	}
 

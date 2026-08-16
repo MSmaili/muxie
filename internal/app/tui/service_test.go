@@ -6,8 +6,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/MSmaili/hetki/internal/tui/contracts"
 	"github.com/MSmaili/hetki/internal/tui/core"
+	"github.com/MSmaili/hetki/internal/tui/list"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,20 +26,20 @@ func awaitChannel[T any](t *testing.T, ch <-chan T) T {
 
 type switchDriver struct {
 	loads       int
-	navigations []contracts.BackendTarget
+	navigations []core.BackendTarget
 	uiReturned  bool
 }
 
-func (d *switchDriver) Load(context.Context) (contracts.Snapshot, error) {
+func (d *switchDriver) Load(context.Context) (list.Snapshot, error) {
 	d.loads++
-	return contracts.Snapshot{}, nil
+	return list.Snapshot{}, nil
 }
 
-func (d *switchDriver) Execute(context.Context, contracts.Intent) (contracts.ActionResult, error) {
-	return contracts.ActionResult{Navigation: "dev"}, nil
+func (d *switchDriver) Execute(context.Context, core.ActionRequest) (core.ActionResult, error) {
+	return core.ActionResult{Navigation: "dev"}, nil
 }
 
-func (d *switchDriver) Navigate(_ context.Context, outcome contracts.BackendTarget) error {
+func (d *switchDriver) Navigate(_ context.Context, outcome core.BackendTarget) error {
 	if !d.uiReturned {
 		return assert.AnError
 	}
@@ -52,27 +52,27 @@ type blockingDriver struct {
 	stopped chan struct{}
 }
 
-func (d *blockingDriver) Load(context.Context) (contracts.Snapshot, error) {
-	return contracts.Snapshot{}, nil
+func (d *blockingDriver) Load(context.Context) (list.Snapshot, error) {
+	return list.Snapshot{}, nil
 }
 
-func (d *blockingDriver) Execute(ctx context.Context, _ contracts.Intent) (contracts.ActionResult, error) {
+func (d *blockingDriver) Execute(ctx context.Context, _ core.ActionRequest) (core.ActionResult, error) {
 	close(d.started)
 	<-ctx.Done()
 	close(d.stopped)
-	return contracts.ActionResult{}, ctx.Err()
+	return core.ActionResult{}, ctx.Err()
 }
 
-func (d *blockingDriver) Navigate(context.Context, contracts.BackendTarget) error { return nil }
+func (d *blockingDriver) Navigate(context.Context, core.BackendTarget) error { return nil }
 
 func TestUIExitCancelsAndJoinsBusyEffect(t *testing.T) {
 	driver := &blockingDriver{started: make(chan struct{}), stopped: make(chan struct{})}
 	dispatchDone := make(chan error, 1)
 	service := Service{
 		Driver: driver,
-		RunUI: func(_ context.Context, _ contracts.Snapshot, dispatch core.DispatchFunc) (contracts.BackendTarget, error) {
+		RunUI: func(_ context.Context, _ list.Snapshot, _ core.KeyMap, dispatch core.DispatchFunc) (core.BackendTarget, error) {
 			go func() {
-				_, err := dispatch(contracts.Intent{Type: contracts.IntentCreateSession})
+				_, err := dispatch(core.ActionRequest{ActionID: core.ActionCreateSession})
 				dispatchDone <- err
 			}()
 			awaitChannel(t, driver.started)
@@ -95,13 +95,13 @@ type navigationDriver struct {
 	started chan struct{}
 }
 
-func (d *navigationDriver) Load(context.Context) (contracts.Snapshot, error) {
-	return contracts.Snapshot{}, nil
+func (d *navigationDriver) Load(context.Context) (list.Snapshot, error) {
+	return list.Snapshot{}, nil
 }
-func (d *navigationDriver) Execute(context.Context, contracts.Intent) (contracts.ActionResult, error) {
-	return contracts.ActionResult{}, nil
+func (d *navigationDriver) Execute(context.Context, core.ActionRequest) (core.ActionResult, error) {
+	return core.ActionResult{}, nil
 }
-func (d *navigationDriver) Navigate(ctx context.Context, _ contracts.BackendTarget) error {
+func (d *navigationDriver) Navigate(ctx context.Context, _ core.BackendTarget) error {
 	close(d.started)
 	<-ctx.Done()
 	return ctx.Err()
@@ -111,7 +111,7 @@ func TestRunPreservesParentCancellation(t *testing.T) {
 	started := make(chan struct{})
 	service := Service{
 		Driver: &switchDriver{},
-		RunUI: func(ctx context.Context, _ contracts.Snapshot, _ core.DispatchFunc) (contracts.BackendTarget, error) {
+		RunUI: func(ctx context.Context, _ list.Snapshot, _ core.KeyMap, _ core.DispatchFunc) (core.BackendTarget, error) {
 			close(started)
 			<-ctx.Done()
 			return "", tea.ErrProgramKilled
@@ -131,7 +131,7 @@ func TestPostExitNavigationUsesParentCancellation(t *testing.T) {
 	driver := &navigationDriver{started: make(chan struct{})}
 	service := Service{
 		Driver: driver,
-		RunUI: func(context.Context, contracts.Snapshot, core.DispatchFunc) (contracts.BackendTarget, error) {
+		RunUI: func(context.Context, list.Snapshot, core.KeyMap, core.DispatchFunc) (core.BackendTarget, error) {
 			return "dev", nil
 		},
 	}
@@ -149,14 +149,14 @@ func TestSuccessfulSwitchNavigatesAfterUIWithoutRefresh(t *testing.T) {
 	driver := &switchDriver{}
 	service := Service{
 		Driver: driver,
-		RunUI: func(_ context.Context, _ contracts.Snapshot, dispatch core.DispatchFunc) (contracts.BackendTarget, error) {
+		RunUI: func(_ context.Context, _ list.Snapshot, _ core.KeyMap, dispatch core.DispatchFunc) (core.BackendTarget, error) {
 			defer func() { driver.uiReturned = true }()
-			result, err := dispatch(contracts.Intent{Type: contracts.IntentSwitch, Target: "dev"})
+			result, err := dispatch(core.ActionRequest{ActionID: core.ActionOpen, ItemID: "dev"})
 			return result.Navigation, err
 		},
 	}
 
 	require.NoError(t, service.Run(context.Background()))
 	assert.Equal(t, 1, driver.loads)
-	assert.Equal(t, []contracts.BackendTarget{"dev"}, driver.navigations)
+	assert.Equal(t, []core.BackendTarget{"dev"}, driver.navigations)
 }

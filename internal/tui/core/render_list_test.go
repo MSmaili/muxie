@@ -1,11 +1,10 @@
-package components
+package core
 
 import (
 	"strings"
 	"testing"
 
 	"charm.land/lipgloss/v2"
-	"github.com/MSmaili/hetki/internal/tui/contracts"
 )
 
 func TestShortenPath(t *testing.T) {
@@ -48,7 +47,7 @@ func TestShortenPathZeroWidth(t *testing.T) {
 }
 
 func TestRenderTreeSanitizesAndFitsNarrowWidths(t *testing.T) {
-	row := TreeRowProps{Kind: contracts.NodeKindWindow, Label: "\x1b]0;owned\a中👨‍👩‍👧é\nnext"}
+	row := TreeRowProps{Primary: "\x1b]0;owned\a中👨‍👩‍👧é\nnext"}
 	for width := 0; width <= 12; width++ {
 		line := RenderTree(TreeProps{Width: width, Rows: []TreeRowProps{row}})[0]
 		if strings.ContainsAny(line, "\x1b\n\r\t") {

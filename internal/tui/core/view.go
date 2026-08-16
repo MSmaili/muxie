@@ -7,139 +7,87 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/MSmaili/hetki/internal/terminal"
-	"github.com/MSmaili/hetki/internal/tui/contracts"
-	"github.com/MSmaili/hetki/internal/tui/core/components"
+	"github.com/MSmaili/hetki/internal/tui/list"
 )
 
 func (m model) View() tea.View {
 	t := m.theme
 	layout := m.layout()
-	lineWidth := layout.lineWidth
-	frameStyle := layout.frameStyle
-	innerW := layout.innerWidth
-	compact := layout.compact
-
-	start := m.offset
-	end := m.offset + m.listH
-	if end > len(m.rows) {
-		end = len(m.rows)
-	}
+	lineWidth, innerW := layout.lineWidth, layout.innerWidth
 
 	contentLines := []string{
-		components.RenderSearchBar(components.SearchBarProps{
-			Width:       innerW,
-			Filter:      m.filter,
-			Right:       headerRight(m),
-			Active:      m.mode == modeFilter,
-			Compact:     compact,
-			Style:       t.searchBox,
-			PromptStyle: t.selectedHint,
-			MetaStyle:   t.meta,
+		RenderSearchBar(SearchBarProps{
+			Width: innerW, Filter: m.items.Query(), Right: headerRight(m),
+			Active: m.mode == modeFilter, Compact: layout.compact,
+			Style: t.searchBox, PromptStyle: t.selectedHint, MetaStyle: t.meta,
 		}),
 		t.sectionLine.Render(strings.Repeat("─", innerW)),
 	}
 
-	visibleRows := make([]components.TreeRowProps, 0, end-start)
-	for i := start; i < end && len(visibleRows) < m.listH; i++ {
-		r := m.rows[i]
-		visibleRows = append(visibleRows, components.TreeRowProps{
-			NodeID:     string(r.Node.ID),
-			Kind:       r.Node.Kind,
-			Label:      r.Node.Label,
-			Path:       r.Node.Path,
-			Depth:      r.Depth,
-			TreePrefix: r.TreePrefix,
-			Expanded:   r.Expanded,
-			Branch:     r.Branch,
-			Active:     r.Node.Active,
-			Selected:   i == m.cursor,
+	rows := m.items.VisibleRows()
+	visibleRows := make([]TreeRowProps, 0, len(rows))
+	for i, row := range rows {
+		visibleRows = append(visibleRows, TreeRowProps{
+			ItemID: string(row.Item.ID), Primary: row.Item.Primary, Secondary: row.Item.Secondary,
+			Depth: row.Depth, TreePrefix: row.TreePrefix, Expanded: row.Expanded, Branch: row.Branch,
+			Active: m.items.IsActive(row.Item.ID), Selected: m.items.Offset()+i == m.items.Cursor(),
 		})
 	}
-	rowLines := components.RenderTree(components.TreeProps{
-		Width:     innerW,
-		EmptyText: emptyStateText(m),
-		Rows:      visibleRows,
-		Compact:   compact,
-		Styles: components.TreeStyles{
-			Meta:               t.meta,
-			Row:                t.row,
-			SessionRow:         t.sessionRow,
-			WindowRow:          t.windowRow,
-			WindowPath:         t.windowPath,
-			WindowPathSelected: t.windowPathSelected,
-			ActiveRow:          t.activeRow,
-			SelectedRow:        t.selectedRow,
-			Rail:               t.rail,
+	rowLines := RenderTree(TreeProps{
+		Width: innerW, EmptyText: emptyStateText(m), Rows: visibleRows, Compact: layout.compact,
+		Styles: TreeStyles{
+			Meta: t.meta, Row: t.row, RootRow: t.rootRow, ChildRow: t.childRow,
+			Secondary: t.secondary, SecondarySelected: t.secondarySelected,
+			ActiveRow: t.activeRow, SelectedRow: t.selectedRow, Rail: t.rail,
 		},
 	})
 
 	header := strings.Join(contentLines, "\n")
-	middle := strings.Join(rowLines, "\n")
-	middle = lipgloss.PlaceVertical(layout.middleHeight, lipgloss.Top, middle)
+	middle := lipgloss.PlaceVertical(layout.middleHeight, lipgloss.Top, strings.Join(rowLines, "\n"))
+	rendered := layout.frameStyle.Width(lineWidth).Render(lipgloss.JoinVertical(lipgloss.Left, header, middle))
 
-	content := lipgloss.JoinVertical(lipgloss.Left, header, middle)
-	rendered := frameStyle.Width(lineWidth).Render(content)
-
-	var overlayContent string
+	var overlay string
 	if m.mode == modeInput {
-		overlayContent = components.RenderInputModal(components.InputModalProps{
-			LineWidth:  lineWidth,
-			Title:      m.input.Title,
-			Prompt:     m.input.Prompt,
-			Value:      m.input.Value,
-			ModalStyle: t.modal,
-			TitleStyle: t.modalTitle,
-			HintStyle:  t.modalHint,
+		overlay = RenderInputModal(InputModalProps{
+			LineWidth: lineWidth, Title: m.input.Title, Prompt: m.input.Prompt, Value: m.input.Value,
+			Hint:       modalControls(m.keys, KeyModeInput, "submit"),
+			ModalStyle: t.modal, TitleStyle: t.modalTitle, HintStyle: t.modalHint,
 		})
 	} else if m.mode == modeConfirm {
-		overlayContent = components.RenderConfirmModal(components.ConfirmModalProps{
-			LineWidth:  lineWidth,
-			Title:      m.confirm.Title,
-			Body:       m.confirm.Body,
-			ModalStyle: t.modal,
-			TitleStyle: t.modalTitle,
-			HintStyle:  t.modalHint,
-		})
-	} else if m.helpOpen {
-		overlayContent = components.RenderHelpOverlay(components.HelpOverlayProps{
-			LineWidth: lineWidth,
-			Title:     "KEYBINDINGS",
-			Hint:      "? / esc / enter close",
-			Sections: []components.HelpSection{
-				{Title: "NAVIGATION", Entries: []components.HelpEntry{{Keys: "j, k, ↓, ↑", Desc: "move"}, {Keys: "ctrl+n, ctrl+p", Desc: "move (vim)"}, {Keys: "u, d, pgup, pgdn", Desc: "page up/down"}, {Keys: "g, G", Desc: "top / bottom"}, {Keys: "h, l, ←, →", Desc: "collapse / expand"}, {Keys: "H, L", Desc: "collapse all / expand all"}}},
-				{Title: "ACTIONS", Entries: []components.HelpEntry{{Keys: "enter, ctrl+y", Desc: "select / switch"}, {Keys: "a", Desc: "new window"}, {Keys: "s", Desc: "new session"}, {Keys: "e", Desc: "rename"}, {Keys: "x", Desc: "delete"}, {Keys: "r", Desc: "refresh"}}},
-				{Title: "FILTER", Entries: []components.HelpEntry{{Keys: "/", Desc: "start filter"}, {Keys: "n, N", Desc: "next / prev match"}, {Keys: "ctrl+l", Desc: "clear filter"}}},
-				{Title: "EDIT", Entries: []components.HelpEntry{{Keys: "ctrl+w", Desc: "delete word"}, {Keys: "ctrl+u", Desc: "clear line"}}},
-				{Title: "OTHER", Entries: []components.HelpEntry{{Keys: "esc", Desc: "cancel"}, {Keys: "q, ctrl+c", Desc: "quit"}, {Keys: "?", Desc: "toggle help"}}},
-			},
-			OverlayStyle: t.helpOverlay,
-			TitleStyle:   t.modalTitle,
-			MetaStyle:    t.meta,
-			KeyStyle:     t.selectedHint,
-			HintStyle:    t.modalHint,
+		overlay = RenderConfirmModal(ConfirmModalProps{
+			LineWidth: lineWidth, Title: m.confirm.Title, Body: m.confirm.Body,
+			Hint:       modalControls(m.keys, KeyModeConfirm, "confirm"),
+			ModalStyle: t.modal, TitleStyle: t.modalTitle, HintStyle: t.modalHint,
 		})
 	}
-
-	if overlayContent != "" {
-		totalH := lipgloss.Height(rendered)
-		overlayH := lipgloss.Height(overlayContent)
-		overlayW := terminal.Width(overlayContent)
-		x := (lineWidth - overlayW) / 2
-		y := (totalH - overlayH) / 2
-		if x < 0 {
-			x = 0
-		}
-		if y < 0 {
-			y = 0
-		}
-		bg := lipgloss.NewLayer(rendered)
-		fg := lipgloss.NewLayer(overlayContent).X(x).Y(y).Z(1)
-		rendered = lipgloss.NewCompositor(bg, fg).Render()
+	if overlay != "" {
+		x := max(0, (lineWidth-terminal.Width(overlay))/2)
+		y := max(0, (lipgloss.Height(rendered)-lipgloss.Height(overlay))/2)
+		rendered = lipgloss.NewCompositor(
+			lipgloss.NewLayer(rendered),
+			lipgloss.NewLayer(overlay).X(x).Y(y).Z(1),
+		).Render()
 	}
 
-	v := tea.NewView(rendered)
-	v.AltScreen = true
-	return v
+	view := tea.NewView(rendered)
+	view.AltScreen = true
+	return view
+}
+
+func modalControls(keys KeyMap, mode KeyMode, confirmLabel string) string {
+	parts := make([]string, 0, 2)
+	for _, control := range []struct {
+		action ActionID
+		label  string
+	}{
+		{action: ActionConfirm, label: confirmLabel},
+		{action: ActionCancel, label: "cancel"},
+	} {
+		if bound := keys.Keys(mode, control.action); len(bound) > 0 {
+			parts = append(parts, strings.Join(bound, "/")+" "+control.label)
+		}
+	}
+	return strings.Join(parts, " | ")
 }
 
 func headerRight(m model) string {
@@ -149,37 +97,39 @@ func headerRight(m model) string {
 	if m.busy {
 		return m.status
 	}
-	return sessionPositionLabel(m)
+	return rootPositionLabel(m.items.Snapshot(), selectedItemID(m))
 }
 
-func sessionPositionLabel(m model) string {
-	total := 0
-	current := 0
-	var selectedSessionID contracts.NodeID
+func selectedItemID(m model) list.ItemID {
 	if selected, ok := m.selectedRow(); ok {
-		selectedSessionID = selected.Node.ID
-		if selected.Node.ParentID != "" {
-			selectedSessionID = selected.Node.ParentID
+		return selected.Item.ID
+	}
+	return ""
+}
+
+func rootPositionLabel(snapshot list.Snapshot, selected list.ItemID) string {
+	total := len(snapshot.Items)
+	if total == 0 {
+		return ""
+	}
+	for i, item := range snapshot.Items {
+		if containsItem(item, selected) {
+			return fmt.Sprintf("%d/%d", i+1, total)
 		}
 	}
-	for _, row := range m.rows {
-		if row.Node.Kind != contracts.NodeKindSession {
-			continue
+	return fmt.Sprintf("%d", total)
+}
+
+func containsItem(item list.Item, id list.ItemID) bool {
+	if item.ID == id {
+		return true
+	}
+	for _, child := range item.Children {
+		if containsItem(child, id) {
+			return true
 		}
-		total++
-		if row.Node.ID == selectedSessionID {
-			current = total
-		}
 	}
-	position := fmt.Sprintf("%d sessions", total)
-	if current > 0 {
-		position = fmt.Sprintf("%d/%d", current, total)
-	}
-	workspace := workspaceLabel(m.snapshot.Workspace)
-	if workspace == "" {
-		return position
-	}
-	return workspace + "  " + position
+	return false
 }
 
 func responsiveFrameStyle(base lipgloss.Style, width int) lipgloss.Style {
@@ -196,8 +146,8 @@ func responsiveFrameStyle(base lipgloss.Style, width int) lipgloss.Style {
 }
 
 func emptyStateText(m model) string {
-	if strings.TrimSpace(m.filter) != "" {
-		return "no matching sessions or windows | esc cancel filter | ctrl+l clear"
+	if strings.TrimSpace(m.items.Query()) != "" {
+		return "no matching items"
 	}
 	return "no sessions found"
 }
