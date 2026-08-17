@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/MSmaili/hetki/internal/tui/list"
 )
 
 func (m model) Init() tea.Cmd { return nil }
@@ -12,6 +13,9 @@ func (m model) Init() tea.Cmd { return nil }
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		if m.mode == modeJump {
+			m.cancelJump()
+		}
 		m.width, m.height = msg.Width, msg.Height
 		return m.reflow(), nil
 	case actionResultMsg:
@@ -24,6 +28,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch m.mode {
+		case modeJump:
+			return m.updateJumpMode(msg)
 		case modeFilter:
 			return m.updateFilterMode(msg)
 		case modeInput:
@@ -38,6 +44,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleActionResult(msg actionResultMsg) (tea.Model, tea.Cmd) {
+	if msg.result.Snapshot != nil && m.mode == modeJump {
+		m.cancelJump()
+	}
 	m.busy = false
 	pending := m.pending
 	m.pending = nil
@@ -147,6 +156,14 @@ func (m model) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case m.keys.Matches(KeyModeNormal, ActionFilter, msg):
 		m.mode = modeFilter
 		m.status = statusFilterHint
+	case m.keys.Matches(KeyModeNormal, ActionJump, msg):
+		m.jump = newJumpState(m.items.VisibleRows())
+		if len(m.jump.candidates) == 0 {
+			m.status = statusNoSelection
+			return m, nil
+		}
+		m.mode = modeJump
+		m.err = nil
 	case m.keys.Matches(KeyModeNormal, ActionClearFilter, msg):
 		m.items.SetQuery("")
 		m.status = statusFilterCleared
@@ -164,6 +181,42 @@ func (m model) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.startSelectedRequest(ActionOpen)
 	}
 	return m.reflow(), nil
+}
+
+func (m model) updateJumpMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case m.keys.Matches(KeyModeJump, ActionCancel, msg):
+		m.cancelJump()
+		return m, nil
+	case m.keys.Matches(KeyModeJump, ActionFilter, msg):
+		m.cancelJump()
+		m.mode = modeFilter
+		m.status = statusFilterHint
+		return m, nil
+	}
+	if msg.Text == "" {
+		return m, nil
+	}
+	attempt := m.jump.input + msg.Text
+	itemID, complete, valid := m.jump.enter(msg.Text)
+	if !valid {
+		m.err = fmt.Errorf("invalid jump label %q", attempt)
+		m.status = m.err.Error()
+		return m, nil
+	}
+	m.err = nil
+	if !complete {
+		return m, nil
+	}
+	m.mode = modeBrowse
+	m.jump = jumpState{}
+	return m.startItemRequest(ActionOpen, itemID)
+}
+
+func (m *model) cancelJump() {
+	m.mode = modeBrowse
+	m.jump = jumpState{}
+	m.err = nil
 }
 
 func (m model) updateFilterMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -275,11 +328,15 @@ func (m model) startSelectedRequest(action ActionID) (tea.Model, tea.Cmd) {
 		m.status = statusNoSelection
 		return m, nil
 	}
+	return m.startItemRequest(action, selected.Item.ID)
+}
+
+func (m model) startItemRequest(action ActionID, itemID list.ItemID) (tea.Model, tea.Cmd) {
 	status := statusRunningAction
 	if action == ActionOpen {
 		status = statusSwitching
 	}
-	return m.startRequest(ActionRequest{ActionID: action, ItemID: selected.Item.ID}, status)
+	return m.startRequest(ActionRequest{ActionID: action, ItemID: itemID}, status)
 }
 
 func (m model) startRequest(request ActionRequest, status string) (tea.Model, tea.Cmd) {

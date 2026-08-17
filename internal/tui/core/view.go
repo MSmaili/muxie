@@ -29,7 +29,8 @@ func (m model) View() tea.View {
 	for i, row := range rows {
 		visibleRows = append(visibleRows, TreeRowProps{
 			ItemID: string(row.Item.ID), Primary: row.Item.Primary, Secondary: row.Item.Secondary,
-			Depth: row.Depth, TreePrefix: row.TreePrefix, Expanded: row.Expanded, Branch: row.Branch,
+			JumpLabel: m.jumpLabel(row.Item.ID),
+			Depth:     row.Depth, TreePrefix: row.TreePrefix, Expanded: row.Expanded, Branch: row.Branch,
 			Active: m.items.IsActive(row.Item.ID), Selected: m.items.Offset()+i == m.items.Cursor(),
 		})
 	}
@@ -38,7 +39,7 @@ func (m model) View() tea.View {
 		Styles: TreeStyles{
 			Meta: t.meta, Row: t.row, RootRow: t.rootRow, ChildRow: t.childRow,
 			Secondary: t.secondary, SecondarySelected: t.secondarySelected,
-			ActiveRow: t.activeRow, SelectedRow: t.selectedRow, Rail: t.rail,
+			ActiveRow: t.activeRow, SelectedRow: t.selectedRow, JumpLabel: t.jumpLabel, Rail: t.rail,
 		},
 	})
 
@@ -72,6 +73,13 @@ func (m model) View() tea.View {
 	view := tea.NewView(rendered)
 	view.AltScreen = true
 	return view
+}
+
+func (m model) jumpLabel(id list.ItemID) string {
+	if m.mode != modeJump {
+		return ""
+	}
+	return m.jump.labelFor(id)
 }
 
 func modalControls(keys KeyMap, mode KeyMode, confirmLabel string) string {

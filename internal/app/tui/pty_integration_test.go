@@ -32,7 +32,10 @@ func (ptyDriver) Load(context.Context) (list.Snapshot, error) {
 	}}}, nil
 }
 
-func (ptyDriver) Execute(_ context.Context, _ core.ActionRequest) (core.ActionResult, error) {
+func (ptyDriver) Execute(_ context.Context, request core.ActionRequest) (core.ActionResult, error) {
+	if request.ActionID != core.ActionOpen || request.ItemID != "session:dev" {
+		return core.ActionResult{}, fmt.Errorf("unexpected jump request: %+v", request)
+	}
 	return core.ActionResult{Navigation: "dev"}, nil
 }
 
@@ -77,7 +80,11 @@ func TestTerminalRestoredBeforeNavigation(t *testing.T) {
 	cmd.Stdin = input
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-		_, _ = inputWriter.Write([]byte{'\r'})
+		_, _ = inputWriter.Write([]byte("\x1b"))
+		time.Sleep(300 * time.Millisecond)
+		_, _ = inputWriter.Write([]byte(";"))
+		time.Sleep(100 * time.Millisecond)
+		_, _ = inputWriter.Write([]byte("a"))
 		_ = inputWriter.Close()
 	}()
 	var output bytes.Buffer

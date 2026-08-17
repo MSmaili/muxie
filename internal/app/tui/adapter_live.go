@@ -47,6 +47,17 @@ func (a *LiveAdapter) Execute(ctx context.Context, request core.ActionRequest) (
 		if strings.TrimSpace(item.Target) == "" {
 			return core.ActionResult{}, fmt.Errorf("item %q has no navigation target", item.ID)
 		}
+		b, err := a.detectBackend()
+		if err != nil {
+			return core.ActionResult{}, fmt.Errorf("failed to detect backend: %w", err)
+		}
+		state, err := b.QueryState(ctx)
+		if err != nil {
+			return core.ActionResult{}, fmt.Errorf("validate selected item %q: %w", item.ID, err)
+		}
+		if !liveItemExists(state, item) {
+			return core.ActionResult{}, fmt.Errorf("selected item %q is stale", item.ID)
+		}
 		return core.ActionResult{Message: "switching to " + item.Target, Navigation: core.BackendTarget(item.Target)}, nil
 	case core.ActionCreateWindow:
 		return a.createWindow(ctx, request, item)
@@ -57,6 +68,24 @@ func (a *LiveAdapter) Execute(ctx context.Context, request core.ActionRequest) (
 	default:
 		return core.ActionResult{}, fmt.Errorf("action %q is not implemented", request.ActionID)
 	}
+}
+
+func liveItemExists(state backend.StateResult, item liveItem) bool {
+	for _, session := range state.Sessions {
+		if session.ID != item.SessionTarget {
+			continue
+		}
+		if item.Kind == liveSession {
+			return item.Target == session.ID
+		}
+		for _, window := range session.Windows {
+			if item.Target == session.ID+":"+window.ID {
+				return true
+			}
+		}
+		return false
+	}
+	return false
 }
 
 func (a *LiveAdapter) Navigate(ctx context.Context, navigation core.BackendTarget) error {

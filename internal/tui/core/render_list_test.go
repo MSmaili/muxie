@@ -46,8 +46,15 @@ func TestShortenPathZeroWidth(t *testing.T) {
 	}
 }
 
+func TestRenderTreeShowsJumpLabelBesideTheRow(t *testing.T) {
+	line := RenderTree(TreeProps{Width: 40, Rows: []TreeRowProps{{Primary: "editor", JumpLabel: "aa"}}})[0]
+	if !strings.Contains(line, "aa") || !strings.Contains(line, "editor") {
+		t.Fatalf("jump label was not rendered beside row: %q", line)
+	}
+}
+
 func TestRenderTreeSanitizesAndFitsNarrowWidths(t *testing.T) {
-	row := TreeRowProps{Primary: "\x1b]0;owned\a中👨‍👩‍👧é\nnext"}
+	row := TreeRowProps{Primary: "\x1b]0;owned\a中👨‍👩‍👧é\nnext", JumpLabel: "\x1b[31ma\n"}
 	for width := 0; width <= 12; width++ {
 		line := RenderTree(TreeProps{Width: width, Rows: []TreeRowProps{row}})[0]
 		if strings.ContainsAny(line, "\x1b\n\r\t") {

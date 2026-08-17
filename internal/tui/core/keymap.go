@@ -12,6 +12,7 @@ type KeyMode string
 
 const (
 	KeyModeNormal  KeyMode = "normal"
+	KeyModeJump    KeyMode = "jump"
 	KeyModeFilter  KeyMode = "filter"
 	KeyModeInput   KeyMode = "input"
 	KeyModeConfirm KeyMode = "confirm"
@@ -71,6 +72,7 @@ func DefaultKeyMap() KeyMap {
 			{Action: ActionPageUp, Keys: []string{"pgup", "u"}},
 			{Action: ActionPageDown, Keys: []string{"pgdown", "d"}},
 			{Action: ActionFilter, Keys: []string{"/"}},
+			{Action: ActionJump, Keys: []string{";"}},
 			{Action: ActionNextMatch, Keys: []string{"n"}},
 			{Action: ActionPrevMatch, Keys: []string{"N"}},
 			{Action: ActionClearFilter, Keys: []string{"ctrl+l"}},
@@ -84,6 +86,10 @@ func DefaultKeyMap() KeyMap {
 			{Action: ActionCollapseAll, Keys: []string{"H"}},
 			{Action: ActionRefresh, Keys: []string{"r"}},
 			{Action: ActionOpen, Keys: []string{"enter", "ctrl+y"}},
+		},
+		KeyModeJump: {
+			{Action: ActionCancel, Keys: []string{"esc"}},
+			{Action: ActionFilter, Keys: []string{"/"}},
 		},
 		KeyModeFilter: {
 			{Action: ActionCancel, Keys: []string{"esc"}},

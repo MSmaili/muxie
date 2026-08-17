@@ -41,6 +41,7 @@ type uiMode string
 
 const (
 	modeBrowse  uiMode = "browse"
+	modeJump    uiMode = "jump"
 	modeFilter  uiMode = "filter"
 	modeInput   uiMode = "input"
 	modeConfirm uiMode = "confirm"
@@ -69,6 +70,7 @@ type model struct {
 	busy       bool
 	input      inputState
 	confirm    confirmState
+	jump       jumpState
 	pending    *ActionRequest
 	navigation BackendTarget
 

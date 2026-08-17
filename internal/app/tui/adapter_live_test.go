@@ -96,6 +96,17 @@ func TestLiveAdapterResolvesOpenFromCurrentItemIndex(t *testing.T) {
 	require.ErrorContains(t, err, "stale")
 }
 
+func TestLiveAdapterRejectsAnItemRemovedAfterTheSnapshot(t *testing.T) {
+	stub := &stubBackend{state: liveState()}
+	adapter := loadedAdapter(t, stub)
+	stub.state.Sessions[0].Windows = nil
+
+	result, err := adapter.Execute(context.Background(), core.ActionRequest{ActionID: core.ActionOpen, ItemID: "window:@1"})
+	require.ErrorContains(t, err, "stale")
+	assert.Empty(t, result.Navigation)
+	assert.Empty(t, stub.switchCalls)
+}
+
 func TestLiveAdapterCreateWindowPromptsThenRefreshesAndSelectsCreatedItem(t *testing.T) {
 	stub := &stubBackend{state: liveState()}
 	stub.applyHook = func(actions []backend.Action) {

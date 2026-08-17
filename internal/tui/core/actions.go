@@ -13,6 +13,7 @@ const (
 	ActionPageUp        ActionID = "page_up"
 	ActionPageDown      ActionID = "page_down"
 	ActionFilter        ActionID = "filter"
+	ActionJump          ActionID = "jump"
 	ActionNextMatch     ActionID = "next_match"
 	ActionPrevMatch     ActionID = "previous_match"
 	ActionClearFilter   ActionID = "clear_filter"

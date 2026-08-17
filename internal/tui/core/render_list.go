@@ -17,6 +17,7 @@ type TreeStyles struct {
 	SecondarySelected lipgloss.Style
 	ActiveRow         lipgloss.Style
 	SelectedRow       lipgloss.Style
+	JumpLabel         lipgloss.Style
 	Rail              lipgloss.Style
 }
 
@@ -24,6 +25,7 @@ type TreeRowProps struct {
 	ItemID     string
 	Primary    string
 	Secondary  string
+	JumpLabel  string
 	Depth      int
 	TreePrefix string
 	Expanded   bool
@@ -100,6 +102,10 @@ func shortenPath(path string, maxWidth int) string {
 }
 
 func renderRowLine(row TreeRowProps, styles TreeStyles, compact bool) string {
+	jumpLabel := strings.TrimSpace(terminal.Sanitize(row.JumpLabel))
+	if jumpLabel != "" {
+		jumpLabel = styles.JumpLabel.Render(jumpLabel) + " "
+	}
 	cursor := " "
 	if row.Selected {
 		cursor = "❯"
@@ -108,7 +114,7 @@ func renderRowLine(row TreeRowProps, styles TreeStyles, compact bool) string {
 	if row.Active {
 		marker = "● "
 	}
-	return fmt.Sprintf("%s %s%s", cursor, marker, decoratedLabel(row, styles, compact))
+	return jumpLabel + fmt.Sprintf("%s %s%s", cursor, marker, decoratedLabel(row, styles, compact))
 }
 
 func styleRowLine(row TreeRowProps, line string, width int, styles TreeStyles) string {
