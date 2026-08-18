@@ -85,6 +85,7 @@ func DefaultKeyMap() KeyMap {
 			{Action: ActionExpandAll, Keys: []string{"L"}},
 			{Action: ActionCollapseAll, Keys: []string{"H"}},
 			{Action: ActionRefresh, Keys: []string{"r"}},
+			{Action: ActionToggleProjection, Keys: []string{"tab"}},
 			{Action: ActionOpen, Keys: []string{"enter", "ctrl+y"}},
 		},
 		KeyModeJump: {

@@ -47,10 +47,10 @@ func (s *stubBackend) Switch(_ context.Context, target string) error {
 
 func liveState() backend.StateResult {
 	return backend.StateResult{
-		Active: backend.ActiveContext{Session: "core", WindowIndex: 1, Pane: 0},
+		Active: backend.ActiveContext{SessionID: "$1", Session: "core", WindowID: "@1", WindowIndex: 1, PaneID: "%1", Pane: 0, Path: "/work/editor"},
 		Sessions: []backend.Session{{
 			ID: "$1", Name: "core", WorkspacePath: "/work/.hetki.yaml",
-			Windows: []backend.Window{{ID: "@1", Index: 1, Name: "editor", Path: "/work/editor", Panes: []backend.Pane{{ID: "%1", Index: 0}}}},
+			Windows: []backend.Window{{ID: "@1", Index: 1, Name: "editor", Path: "/work/editor", Active: true, Panes: []backend.Pane{{ID: "%1", Index: 0, Path: "/work/editor", Active: true}}}},
 		}},
 	}
 }
@@ -105,6 +105,29 @@ func TestLiveAdapterRejectsAnItemRemovedAfterTheSnapshot(t *testing.T) {
 	require.ErrorContains(t, err, "stale")
 	assert.Empty(t, result.Navigation)
 	assert.Empty(t, stub.switchCalls)
+}
+
+func TestLiveAdapterRejectsStaleFlatPaneIDsAndPaths(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		edit func(*backend.Pane)
+	}{
+		{name: "pane replaced", edit: func(pane *backend.Pane) { pane.ID = "%2" }},
+		{name: "pane changed directory", edit: func(pane *backend.Pane) { pane.Path = "/work/other" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			stub := &stubBackend{state: liveState()}
+			adapter := loadedAdapter(t, stub)
+			_, err := adapter.Execute(context.Background(), core.ActionRequest{ActionID: core.ActionToggleProjection, ItemID: "window:@1"})
+			require.NoError(t, err)
+			id := destinationItemID("$1", "@1", "/work/editor")
+			test.edit(&stub.state.Sessions[0].Windows[0].Panes[0])
+
+			result, err := adapter.Execute(context.Background(), core.ActionRequest{ActionID: core.ActionOpen, ItemID: id})
+			require.ErrorContains(t, err, "stale")
+			assert.Empty(t, result.Navigation)
+		})
+	}
 }
 
 func TestLiveAdapterCreateWindowPromptsThenRefreshesAndSelectsCreatedItem(t *testing.T) {
@@ -190,6 +213,99 @@ func TestInvalidProjectionRetainsPreviousOwnerIndex(t *testing.T) {
 	result, err := adapter.Execute(context.Background(), core.ActionRequest{ActionID: core.ActionOpen, ItemID: "window:@1"})
 	require.NoError(t, err)
 	assert.Equal(t, core.BackendTarget("$1:@1"), result.Navigation)
+}
+
+func TestLiveAdapterTogglesBetweenTreeAndFlatWithStableSelection(t *testing.T) {
+	stub := &stubBackend{state: liveState()}
+	adapter := loadedAdapter(t, stub)
+	destinationID := destinationItemID("$1", "@1", "/work/editor")
+
+	flat, err := adapter.Execute(context.Background(), core.ActionRequest{
+		ActionID: core.ActionToggleProjection, ItemID: "window:@1",
+	})
+	require.NoError(t, err)
+	require.Len(t, flat.Snapshot.Items, 1)
+	assert.Equal(t, destinationID, flat.SelectItemID)
+	assert.Empty(t, flat.Snapshot.Items[0].Children)
+
+	opened, err := adapter.Execute(context.Background(), core.ActionRequest{ActionID: core.ActionOpen, ItemID: destinationID})
+	require.NoError(t, err)
+	assert.Equal(t, core.BackendTarget("%1"), opened.Navigation)
+
+	tree, err := adapter.Execute(context.Background(), core.ActionRequest{
+		ActionID: core.ActionToggleProjection, ItemID: destinationID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, list.ItemID("window:@1"), tree.SelectItemID)
+	assert.Equal(t, projectionTree, adapter.projection)
+}
+
+func TestTreeToFlatPrefersTheSelectedSessionsActiveDestination(t *testing.T) {
+	state := liveState()
+	state.Sessions = append(state.Sessions, backend.Session{
+		ID: "$2", Name: "ops", Windows: []backend.Window{{
+			ID: "@2", Name: "logs", Active: true,
+			Panes: []backend.Pane{{ID: "%2", Index: 0, Path: "/ops/logs", Active: true}},
+		}},
+	})
+	stub := &stubBackend{state: state}
+	adapter := loadedAdapter(t, stub)
+
+	result, err := adapter.Execute(context.Background(), core.ActionRequest{
+		ActionID: core.ActionToggleProjection, ItemID: "session:$2",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, destinationItemID("$2", "@2", "/ops/logs"), result.SelectItemID)
+}
+
+func TestFlatDestinationActionsUseTheOwningWindowAndSession(t *testing.T) {
+	stub := &stubBackend{state: liveState()}
+	adapter := loadedAdapter(t, stub)
+	_, err := adapter.Execute(context.Background(), core.ActionRequest{ActionID: core.ActionToggleProjection, ItemID: "window:@1"})
+	require.NoError(t, err)
+	destinationID := destinationItemID("$1", "@1", "/work/editor")
+
+	rename := core.ActionRequest{ActionID: core.ActionRename, ItemID: destinationID, Value: text("api")}
+	stub.applyHook = func(actions []backend.Action) {
+		require.Equal(t, backend.RenameWindowAction{Session: "$1", Window: "@1", WindowID: "@1", New: "api"}, actions[0])
+		stub.state.Sessions[0].Windows[0].Name = "api"
+	}
+	result, err := adapter.Execute(context.Background(), rename)
+	require.NoError(t, err)
+	assert.Equal(t, destinationID, result.SelectItemID)
+
+	create := core.ActionRequest{ActionID: core.ActionCreateWindow, ItemID: destinationID, Value: text("logs")}
+	stub.applyHook = func(actions []backend.Action) {
+		require.Equal(t, backend.CreateWindowAction{Session: "$1", Name: "logs"}, actions[0])
+		stub.state.Sessions[0].Windows = append(stub.state.Sessions[0].Windows, backend.Window{
+			ID: "@2", Name: "logs", Index: 2, Panes: []backend.Pane{{ID: "%2", Path: "/work/logs"}},
+		})
+	}
+	result, err = adapter.Execute(context.Background(), create)
+	require.NoError(t, err)
+	assert.Equal(t, destinationItemID("$1", "@2", "/work/logs"), result.SelectItemID)
+
+	remove := core.ActionRequest{ActionID: core.ActionDelete, ItemID: destinationID, Confirmed: true}
+	stub.applyHook = func(actions []backend.Action) {
+		require.Equal(t, backend.KillWindowAction{Session: "$1", Window: "@1", WindowID: "@1"}, actions[0])
+		stub.state.Sessions[0].Windows = stub.state.Sessions[0].Windows[1:]
+	}
+	_, err = adapter.Execute(context.Background(), remove)
+	require.NoError(t, err)
+}
+
+func TestInvalidFlatProjectionRetainsTreeAndOwnerIndex(t *testing.T) {
+	state := liveState()
+	state.Sessions[0].Windows[0].Panes[0].ID = "unstable"
+	stub := &stubBackend{state: state}
+	adapter := loadedAdapter(t, stub)
+
+	_, err := adapter.Execute(context.Background(), core.ActionRequest{
+		ActionID: core.ActionToggleProjection, ItemID: "window:@1",
+	})
+	require.ErrorContains(t, err, "stable %N ID")
+	assert.Equal(t, projectionTree, adapter.projection)
+	assert.Contains(t, adapter.index, list.ItemID("window:@1"))
 }
 
 func TestLiveAdapterRejectsMissingStableSessionAndWindowIDsDuringProjection(t *testing.T) {

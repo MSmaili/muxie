@@ -28,10 +28,11 @@ func projectTree(result backend.StateResult, homeDir string) (list.Snapshot, ite
 			SearchFields: []list.SearchField{{Tier: list.SearchPrimary, Text: session.Name}},
 		}
 		index[sessionID] = liveItem{
-			ID: sessionID, Kind: liveSession, Label: session.Name, Name: session.Name,
-			Target: sessionTarget, SessionTarget: sessionTarget,
+			ID: sessionID, SessionID: sessionID, Kind: liveSession, Label: session.Name, Name: session.Name,
+			SessionName: session.Name, Target: sessionTarget, MutationTarget: sessionTarget, SessionTarget: sessionTarget,
 		}
-		if result.Active.Session == session.Name {
+		activeSession := result.Active.SessionID == session.ID || (result.Active.SessionID == "" && result.Active.Session == session.Name)
+		if activeSession {
 			snapshot.ActiveItemID = sessionID
 		}
 
@@ -54,11 +55,14 @@ func projectTree(result backend.StateResult, homeDir string) (list.Snapshot, ite
 			sessionItem.Children = append(sessionItem.Children, list.Item{
 				ID: itemID, Primary: windowIcon + " " + label, Secondary: path, SearchFields: fields,
 			})
+			mutationTarget := sessionTarget + ":" + windowTarget
 			index[itemID] = liveItem{
-				ID: itemID, ParentID: sessionID, Kind: liveWindow, Label: label, Name: window.Name,
-				Target: sessionTarget + ":" + windowTarget, SessionTarget: sessionTarget,
+				ID: itemID, ParentID: sessionID, SessionID: sessionID, WindowID: windowID, Kind: liveWindow,
+				Label: label, Name: window.Name, SessionName: session.Name, WindowName: window.Name,
+				Target: mutationTarget, MutationTarget: mutationTarget, SessionTarget: sessionTarget, WindowActive: window.Active,
 			}
-			if result.Active.Session == session.Name && result.Active.WindowIndex == window.Index {
+			activeWindow := result.Active.WindowID == window.ID || (result.Active.WindowID == "" && result.Active.WindowIndex == window.Index)
+			if activeSession && activeWindow {
 				snapshot.ActiveItemID = itemID
 			}
 		}

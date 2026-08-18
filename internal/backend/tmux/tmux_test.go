@@ -3,6 +3,7 @@ package tmux
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -321,6 +322,30 @@ func TestResolveWindowIndex(t *testing.T) {
 	})
 }
 
+func BenchmarkSwitchStablePaneTenThousandPanes(b *testing.B) {
+	b.Setenv("TMUX", "")
+	var output strings.Builder
+	output.WriteString("0\n0\n")
+	for i := range 10_000 {
+		active := 0
+		if i == 9_999 {
+			active = 1
+		}
+		fmt.Fprintf(&output, "$1|dev|@1|editor|0|layout|0|1|%%%d|%d|%d|/work/%d|sh|\n", i, i, active, i)
+	}
+	stateOutput := strings.TrimSuffix(output.String(), "\n")
+	backend := &TmuxBackend{client: &MockClient{RunFunc: func(context.Context, ...string) (string, error) {
+		return stateOutput, nil
+	}}}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if err := backend.Switch(context.Background(), "%9999"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestSwitchValidatesAndResolvesTargets(t *testing.T) {
 	// pane base index 1; session "core" ($1) has editor (@1), logs (@2), and a
 	// window literally named "logs.0" (@3); session "$2" is literally named
@@ -347,6 +372,7 @@ func TestSwitchValidatesAndResolvesTargets(t *testing.T) {
 		{name: "non-numeric pane", target: "core:ed.x", wantErr: "invalid pane index"},
 		{name: "malformed session ID", target: "$bad", wantErr: "invalid session ID"},
 		{name: "malformed window ID", target: "core:@bad", wantErr: "invalid window ID"},
+		{name: "malformed pane ID", target: "%bad", wantErr: "invalid pane ID"},
 		{name: "pane index overflow", target: "core:editor." + strconv.Itoa(math.MaxInt), wantErr: "pane index overflows"},
 		{name: "ambiguous name collision", target: "a:b", wantErr: "ambiguous switch target"},
 		{name: "ID ref ignores name shadow", target: "$1:editor", wantNav: "$1:1"},
@@ -360,6 +386,8 @@ func TestSwitchValidatesAndResolvesTargets(t *testing.T) {
 		{name: "ID session with window ID", target: "$1:@1", wantNav: "$1:1"},
 		{name: "ID session with window name", target: "$1:editor", wantNav: "$1:1"},
 		{name: "pane offset by base index", target: "core:editor.0", wantNav: "core:1.1"},
+		{name: "stable pane ID resolves current indexes", target: "%1", wantNav: "$1:1.0"},
+		{name: "unknown pane ID", target: "%99", wantErr: "pane ID \"%99\" not found"},
 		{name: "unknown session ID", target: "$9:editor", wantErr: "session \"$9\" not found"},
 		{name: "unknown window ID", target: "core:@9", wantErr: "window ID \"@9\" not found"},
 	}

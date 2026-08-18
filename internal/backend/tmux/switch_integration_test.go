@@ -51,11 +51,24 @@ func TestSwitchTargetsStableIDsOnColonNamedSessions(t *testing.T) {
 	sessionID := state.Sessions[0].ID
 	windowID := state.Sessions[0].Windows[0].ID
 	windowIndex := state.Sessions[0].Windows[0].Index
+	paneID := state.Sessions[0].Windows[0].Panes[0].ID
+	paneIndex := state.Sessions[0].Windows[0].Panes[0].Index
 	paneBase := state.PaneBaseIndex
 
 	require.NoError(t, b.Switch(context.Background(), sessionID))
 	require.NoError(t, b.Switch(context.Background(), fmt.Sprintf("%s:%s", sessionID, windowID)))
 	require.NoError(t, b.Switch(context.Background(), fmt.Sprintf("%s:%s.0", sessionID, windowID)))
+	require.NoError(t, b.Switch(context.Background(), paneID))
+
+	stalePane, err := b.client.Run(context.Background(), "split-window", "-d", "-t", windowID, "-P", "-F", "#{pane_id}")
+	require.NoError(t, err)
+	stalePane = strings.TrimSpace(stalePane)
+	_, err = b.client.Run(context.Background(), "kill-pane", "-t", stalePane)
+	require.NoError(t, err)
+	assert.Error(t, b.Switch(context.Background(), stalePane), "stale pane ID must fail closed")
+
+	t.Setenv("TMUX", fmt.Sprintf("%s,1,%s", "isolated", strings.TrimPrefix(sessionID, "$")))
+	require.NoError(t, b.Switch(context.Background(), paneID))
 
 	assert.Error(t, b.Switch(context.Background(), "a:b"), "ambiguous name form must fail closed")
 	assert.Error(t, b.Switch(context.Background(), fmt.Sprintf("%s:@999", sessionID)), "unknown window ID must fail closed")
@@ -66,5 +79,7 @@ func TestSwitchTargetsStableIDsOnColonNamedSessions(t *testing.T) {
 		fmt.Sprintf("attach-session -t %s", sessionID),
 		fmt.Sprintf("attach-session -t %s:%d", sessionID, windowIndex),
 		fmt.Sprintf("attach-session -t %s:%d.%d", sessionID, windowIndex, paneBase),
+		fmt.Sprintf("attach-session -t %s:%d.%d", sessionID, windowIndex, paneIndex),
+		fmt.Sprintf("switch-client -t %s:%d.%d", sessionID, windowIndex, paneIndex),
 	}, strings.Split(strings.TrimSpace(string(logged)), "\n"))
 }

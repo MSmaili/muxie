@@ -67,6 +67,7 @@ func (b *TmuxBackend) QueryState(ctx context.Context) (backend.StateResult, erro
 					Path:    p.Path,
 					Command: p.Command,
 					Zoom:    p.Zoom,
+					Active:  p.Active,
 				}
 			}
 			windows[j] = backend.Window{
@@ -75,6 +76,7 @@ func (b *TmuxBackend) QueryState(ctx context.Context) (backend.StateResult, erro
 				Index:  w.Index,
 				Path:   w.Path,
 				Layout: w.Layout,
+				Active: w.Active,
 				Panes:  panes,
 			}
 		}
@@ -146,6 +148,22 @@ func (b *TmuxBackend) Switch(ctx context.Context, target string) error {
 	target = strings.TrimSpace(target)
 	if target == "" {
 		return fmt.Errorf("empty switch target")
+	}
+	if strings.HasPrefix(target, "%") {
+		if err := validateObjectID("pane", target, '%'); err != nil {
+			return err
+		}
+		queryCtx, cancel := context.WithTimeout(ctx, queryTimeout)
+		state, err := RunQuery(queryCtx, b.client, LoadStateQuery{})
+		cancel()
+		if err != nil {
+			return err
+		}
+		resolved, err := resolvePaneTarget(state.Sessions, target)
+		if err != nil {
+			return err
+		}
+		return b.switchTo(ctx, resolved)
 	}
 	session, rest, hasWindow := strings.Cut(target, ":")
 	if strings.HasPrefix(session, "$") {
@@ -238,6 +256,27 @@ func sessionRefMatchesName(sessions []Session, name string) bool {
 		}
 	}
 	return false
+}
+
+func resolvePaneTarget(sessions []Session, paneID string) (string, error) {
+	var resolved string
+	for _, session := range sessions {
+		for _, window := range session.Windows {
+			for _, pane := range window.Panes {
+				if pane.ID != paneID {
+					continue
+				}
+				if resolved != "" {
+					return "", fmt.Errorf("pane ID %q is ambiguous", paneID)
+				}
+				resolved = fmt.Sprintf("%s:%d.%d", session.ID, window.Index, pane.Index)
+			}
+		}
+	}
+	if resolved == "" {
+		return "", fmt.Errorf("pane ID %q not found", paneID)
+	}
+	return resolved, nil
 }
 
 func windowNameExists(sessions []Session, sessionRef, name string) bool {

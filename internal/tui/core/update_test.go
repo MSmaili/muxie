@@ -124,6 +124,7 @@ func TestDirectActionKeysEmitStableActionAndItemIDs(t *testing.T) {
 	}{
 		{name: "open", key: specialKey(tea.KeyEnter), selectedID: "window-2", want: ActionRequest{ActionID: ActionOpen, ItemID: "window-2"}},
 		{name: "refresh", key: printableKey("r"), selectedID: "window-2", want: ActionRequest{ActionID: ActionRefresh}},
+		{name: "toggle projection", key: specialKey(tea.KeyTab), selectedID: "window-2", want: ActionRequest{ActionID: ActionToggleProjection, ItemID: "window-2"}},
 		{name: "create session", key: printableKey("s"), selectedID: "session-1", want: ActionRequest{ActionID: ActionCreateSession}},
 		{name: "create window", key: printableKey("a"), selectedID: "window-2", want: ActionRequest{ActionID: ActionCreateWindow, ItemID: "window-2"}},
 		{name: "rename", key: printableKey("e"), selectedID: "window-2", want: ActionRequest{ActionID: ActionRename, ItemID: "window-2"}},
@@ -144,6 +145,26 @@ func TestDirectActionKeysEmitStableActionAndItemIDs(t *testing.T) {
 			require.Equal(t, test.want, got)
 		})
 	}
+}
+
+func TestProjectionTogglePreservesTheFilterAndUsesPreferredSelection(t *testing.T) {
+	flat := list.Snapshot{Items: []list.Item{{
+		ID: "destination-2", Primary: "beta > api",
+		SearchFields: []list.SearchField{{Tier: list.SearchPrimary, Text: "server"}},
+	}}}
+	m := newModel(interactionSnapshot(), func(request ActionRequest) (ActionResult, error) {
+		require.Equal(t, ActionRequest{ActionID: ActionToggleProjection, ItemID: "window-2"}, request)
+		return ActionResult{Snapshot: &flat, SelectItemID: "destination-2"}, nil
+	})
+	m.mode = modeBrowse
+	m = selectNode(t, m, "window-2")
+	m.items.SetQuery("server")
+
+	m, cmd := updateModel(t, m, specialKey(tea.KeyTab))
+	require.NotNil(t, cmd)
+	m, _ = updateModel(t, m, cmd())
+	require.Equal(t, "server", m.items.Query())
+	require.Equal(t, list.ItemID("destination-2"), selectedNodeID(m))
 }
 
 func TestPromptAndConfirmationKeepTheOriginatingItemID(t *testing.T) {

@@ -257,7 +257,8 @@ func (b *stateBuilder) addPane(p paneLine, currentID string) {
 		sess.WorkspacePath = p.workspacePath
 	}
 	win := b.getOrCreateWindow(sess, p.windowID, p.windowName, p.windowIndex, p.windowLayout, p.panePath)
-	win.Panes = append(win.Panes, Pane{ID: p.paneID, Index: p.paneIndex, Path: p.panePath, Command: p.paneCmd, Zoom: p.windowZoomed && p.paneActive})
+	win.Active = p.windowActive
+	win.Panes = append(win.Panes, Pane{ID: p.paneID, Index: p.paneIndex, Path: p.panePath, Command: p.paneCmd, Zoom: p.windowZoomed && p.paneActive, Active: p.paneActive})
 }
 
 func (b *stateBuilder) getOrCreateSession(id, name string) *Session {

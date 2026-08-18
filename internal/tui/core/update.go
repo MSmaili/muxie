@@ -177,6 +177,12 @@ func (m model) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.startSelectedRequest(ActionDelete)
 	case m.keys.Matches(KeyModeNormal, ActionRefresh, msg):
 		return m.startRequest(ActionRequest{ActionID: ActionRefresh}, statusRefreshing)
+	case m.keys.Matches(KeyModeNormal, ActionToggleProjection, msg):
+		var itemID list.ItemID
+		if selected, ok := m.selectedRow(); ok {
+			itemID = selected.Item.ID
+		}
+		return m.startRequest(ActionRequest{ActionID: ActionToggleProjection, ItemID: itemID}, statusRunningAction)
 	case m.keys.Matches(KeyModeNormal, ActionOpen, msg):
 		return m.startSelectedRequest(ActionOpen)
 	}

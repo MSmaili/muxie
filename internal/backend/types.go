@@ -18,6 +18,7 @@ type Window struct {
 	Index  int
 	Path   string
 	Layout string
+	Active bool
 	Panes  []Pane
 }
 
@@ -27,6 +28,7 @@ type Pane struct {
 	Path    string
 	Command string
 	Zoom    bool
+	Active  bool
 }
 
 type ActiveContext struct {

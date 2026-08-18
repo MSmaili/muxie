@@ -11,16 +11,25 @@ type liveItemKind uint8
 const (
 	liveSession liveItemKind = iota + 1
 	liveWindow
+	liveDestination
 )
 
 type liveItem struct {
-	ID            list.ItemID
-	ParentID      list.ItemID
-	Kind          liveItemKind
-	Label         string
-	Name          string
-	Target        string
-	SessionTarget string
+	ID             list.ItemID
+	ParentID       list.ItemID
+	SessionID      list.ItemID
+	WindowID       list.ItemID
+	Kind           liveItemKind
+	Label          string
+	Name           string
+	SessionName    string
+	WindowName     string
+	Target         string
+	MutationTarget string
+	SessionTarget  string
+	RawPath        string
+	WindowActive   bool
+	PaneActive     bool
 }
 
 type itemIndex map[list.ItemID]liveItem

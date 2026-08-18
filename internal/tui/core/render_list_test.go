@@ -40,6 +40,13 @@ func TestShortenPathKeepsFinalSegmentWhenItFits(t *testing.T) {
 	}
 }
 
+func TestShortenPathPreservesRootAndAsManyFinalComponentsAsFit(t *testing.T) {
+	got := shortenPath("~/dev/a-very-long-component/internal/tui", 22)
+	if got != "~/.../internal/tui" {
+		t.Fatalf("expected rooted component elision, got %q", got)
+	}
+}
+
 func TestShortenPathZeroWidth(t *testing.T) {
 	if got := shortenPath("~/code", 0); got != "" {
 		t.Fatalf("expected empty string for zero width, got %q", got)
@@ -53,8 +60,36 @@ func TestRenderTreeShowsJumpLabelBesideTheRow(t *testing.T) {
 	}
 }
 
+func TestRenderTreeAlignsSecondaryColumnsAndTruncatesBothSides(t *testing.T) {
+	lines := RenderTree(TreeProps{Width: 48, Rows: []TreeRowProps{
+		{Primary: "dev > editor", Secondary: "~/code"},
+		{Primary: "production > logs", Secondary: "/var/log"},
+	}})
+	if strings.Index(lines[0], "~/code") != strings.Index(lines[1], "/var/log") {
+		t.Fatalf("secondary columns are not aligned: %#v", lines)
+	}
+
+	compact := RenderTree(TreeProps{Width: 40, Compact: true, Rows: []TreeRowProps{
+		{Primary: "dev > editor", Secondary: "~/code"},
+		{Primary: "production > logs", Secondary: "/var/log"},
+	}})
+	if !strings.Contains(compact[0], "~/code") || strings.Index(compact[0], "~/code") != strings.Index(compact[1], "/var/log") {
+		t.Fatalf("compact flat rows lost aligned paths: %#v", compact)
+	}
+
+	line := RenderTree(TreeProps{Width: 24, Rows: []TreeRowProps{{
+		Primary: "a-very-long-session > a-very-long-window", Secondary: "~/a/very/long/final-path",
+	}}})[0]
+	if !strings.Contains(line, "...") || !strings.Contains(line, "path") {
+		t.Fatalf("expected independent middle path elision, got %q", line)
+	}
+	if width := lipgloss.Width(line); width > 24 {
+		t.Fatalf("rendered width %d exceeds 24: %q", width, line)
+	}
+}
+
 func TestRenderTreeSanitizesAndFitsNarrowWidths(t *testing.T) {
-	row := TreeRowProps{Primary: "\x1b]0;owned\a中👨‍👩‍👧é\nnext", JumpLabel: "\x1b[31ma\n"}
+	row := TreeRowProps{Primary: "\x1b]0;owned\a中👨‍👩‍👧é\nnext", Secondary: "~/bad\tpath\x1b[2J", JumpLabel: "\x1b[31ma\n"}
 	for width := 0; width <= 12; width++ {
 		line := RenderTree(TreeProps{Width: width, Rows: []TreeRowProps{row}})[0]
 		if strings.ContainsAny(line, "\x1b\n\r\t") {

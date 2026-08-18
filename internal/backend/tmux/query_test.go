@@ -43,7 +43,8 @@ func TestLoadStateQuery(t *testing.T) {
 						Index:  0,
 						Path:   "~/code",
 						Layout: "layout-a",
-						Panes:  []Pane{{ID: "%1", Index: 0, Path: "~/code", Command: "vim"}},
+						Active: true,
+						Panes:  []Pane{{ID: "%1", Index: 0, Path: "~/code", Command: "vim", Active: true}},
 					}},
 				}},
 			},
@@ -61,7 +62,8 @@ func TestLoadStateQuery(t *testing.T) {
 						Index:  0,
 						Path:   "~/code",
 						Layout: "layout-a",
-						Panes:  []Pane{{ID: "%1", Index: 0, Path: "~/code", Command: "vim"}, {ID: "%2", Index: 1, Path: "~/api", Command: "node", Zoom: true}},
+						Active: true,
+						Panes:  []Pane{{ID: "%1", Index: 0, Path: "~/code", Command: "vim"}, {ID: "%2", Index: 1, Path: "~/api", Command: "node", Zoom: true, Active: true}},
 					}},
 				}},
 				PaneBaseIndex: 1,
@@ -76,7 +78,7 @@ func TestLoadStateQuery(t *testing.T) {
 					Name: "dev",
 					Windows: []Window{
 						{ID: "@1", Name: "editor", Index: 0, Path: "~/code", Layout: "layout-a", Panes: []Pane{{ID: "%1", Index: 0, Path: "~/code", Command: "vim"}}},
-						{ID: "@2", Name: "server", Index: 1, Path: "~/api", Layout: "layout-b", Panes: []Pane{{ID: "%2", Index: 0, Path: "~/api", Command: "node"}}},
+						{ID: "@2", Name: "server", Index: 1, Path: "~/api", Layout: "layout-b", Active: true, Panes: []Pane{{ID: "%2", Index: 0, Path: "~/api", Command: "node", Active: true}}},
 					},
 				}},
 				WindowBaseIndex: 1,
@@ -146,7 +148,7 @@ func TestLoadStateQueryOrdersSessionsAndWindows(t *testing.T) {
 			Name: "alpha",
 			Windows: []Window{
 				{ID: "@1", Name: "editor", Index: 0, Path: "~/alpha/editor", Layout: "layout-a0", Panes: []Pane{{ID: "%1", Index: 0, Path: "~/alpha/editor", Command: "vim"}}},
-				{ID: "@2", Name: "worker", Index: 1, Path: "~/alpha/worker", Layout: "layout-a1", Panes: []Pane{{ID: "%2", Index: 0, Path: "~/alpha/worker", Command: "make"}}},
+				{ID: "@2", Name: "worker", Index: 1, Path: "~/alpha/worker", Layout: "layout-a1", Active: true, Panes: []Pane{{ID: "%2", Index: 0, Path: "~/alpha/worker", Command: "make", Active: true}}},
 			},
 		},
 		{
@@ -154,7 +156,7 @@ func TestLoadStateQueryOrdersSessionsAndWindows(t *testing.T) {
 			Name: "zeta",
 			Windows: []Window{
 				{ID: "@3", Name: "editor", Index: 0, Path: "~/zeta/editor", Layout: "layout-z0", Panes: []Pane{{ID: "%3", Index: 0, Path: "~/zeta/editor", Command: "vim"}}},
-				{ID: "@4", Name: "server", Index: 1, Path: "~/zeta/server", Layout: "layout-z1", Panes: []Pane{{ID: "%4", Index: 0, Path: "~/zeta/server", Command: "node"}}},
+				{ID: "@4", Name: "server", Index: 1, Path: "~/zeta/server", Layout: "layout-z1", Active: true, Panes: []Pane{{ID: "%4", Index: 0, Path: "~/zeta/server", Command: "node", Active: true}}},
 			},
 		},
 	}

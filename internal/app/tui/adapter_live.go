@@ -12,10 +12,18 @@ import (
 	"github.com/MSmaili/hetki/internal/tui/list"
 )
 
+type projectionKind uint8
+
+const (
+	projectionTree projectionKind = iota
+	projectionFlat
+)
+
 type LiveAdapter struct {
 	DetectBackend func(...string) (backend.Backend, error)
 	cached        backend.Backend
 	index         itemIndex
+	projection    projectionKind
 }
 
 func NewLiveAdapter(detectBackend func(...string) (backend.Backend, error)) *LiveAdapter {
@@ -36,6 +44,9 @@ func (a *LiveAdapter) Execute(ctx context.Context, request core.ActionRequest) (
 	}
 	if request.ActionID == core.ActionCreateSession {
 		return a.createSession(ctx, request)
+	}
+	if request.ActionID == core.ActionToggleProjection {
+		return a.toggleProjection(ctx, request.ItemID)
 	}
 
 	item, err := a.resolveItem(request.ItemID)
@@ -79,8 +90,17 @@ func liveItemExists(state backend.StateResult, item liveItem) bool {
 			return item.Target == session.ID
 		}
 		for _, window := range session.Windows {
-			if item.Target == session.ID+":"+window.ID {
+			windowTarget := session.ID + ":" + window.ID
+			if item.Kind == liveWindow && item.Target == windowTarget {
 				return true
+			}
+			if item.Kind != liveDestination || item.MutationTarget != windowTarget {
+				continue
+			}
+			for _, pane := range window.Panes {
+				if pane.ID == item.Target && pane.Path == item.RawPath {
+					return true
+				}
 			}
 		}
 		return false
@@ -135,13 +155,10 @@ func (a *LiveAdapter) createSession(ctx context.Context, request core.ActionRequ
 	if workspacePath != "" {
 		message += " (workspace linked)"
 	}
-	return a.refreshAfter(ctx, message, func(index itemIndex) list.ItemID {
-		for id, item := range index {
-			if item.Kind == liveSession && item.Name == name {
-				return id
-			}
-		}
-		return ""
+	return a.refreshAfter(ctx, message, func(snapshot list.Snapshot, index itemIndex) list.ItemID {
+		return firstMatchingItem(snapshot, index, func(item liveItem) bool {
+			return item.SessionName == name
+		})
 	})
 }
 
@@ -160,20 +177,19 @@ func (a *LiveAdapter) createWindow(ctx context.Context, request core.ActionReque
 		return core.ActionResult{}, fmt.Errorf("failed to detect backend: %w", err)
 	}
 	existing := make(map[list.ItemID]struct{}, len(a.index))
-	for id := range a.index {
-		existing[id] = struct{}{}
+	for _, item := range a.index {
+		if item.WindowID != "" {
+			existing[item.WindowID] = struct{}{}
+		}
 	}
 	if err := b.Apply(ctx, []backend.Action{backend.CreateWindowAction{Session: selected.SessionTarget, Name: name}}); err != nil {
 		return core.ActionResult{}, fmt.Errorf("create window %q in %q: %w", name, selected.SessionTarget, err)
 	}
-	return a.refreshAfter(ctx, "created window "+selected.SessionTarget+":"+name, func(index itemIndex) list.ItemID {
-		for id, item := range index {
-			_, existed := existing[id]
-			if item.Kind == liveWindow && item.SessionTarget == selected.SessionTarget && item.Name == name && !existed {
-				return id
-			}
-		}
-		return ""
+	return a.refreshAfter(ctx, "created window "+selected.SessionTarget+":"+name, func(snapshot list.Snapshot, index itemIndex) list.ItemID {
+		return firstMatchingItem(snapshot, index, func(item liveItem) bool {
+			_, existed := existing[item.WindowID]
+			return item.SessionTarget == selected.SessionTarget && item.WindowName == name && !existed
+		})
 	})
 }
 
@@ -201,7 +217,7 @@ func (a *LiveAdapter) renameItem(ctx context.Context, request core.ActionRequest
 		action = backend.RenameSessionAction{Current: item.Target, New: name}
 		message = "renamed session " + item.Target + " -> " + name
 	} else {
-		session, window, err := sessionWindowFromTarget(core.BackendTarget(item.Target))
+		session, window, err := sessionWindowFromTarget(core.BackendTarget(item.MutationTarget))
 		if err != nil {
 			return core.ActionResult{}, err
 		}
@@ -211,7 +227,7 @@ func (a *LiveAdapter) renameItem(ctx context.Context, request core.ActionRequest
 	if err := b.Apply(ctx, []backend.Action{action}); err != nil {
 		return core.ActionResult{}, fmt.Errorf("rename item %q: %w", item.ID, err)
 	}
-	return a.refreshAfter(ctx, message, func(itemIndex) list.ItemID { return item.ID })
+	return a.refreshAfter(ctx, message, func(list.Snapshot, itemIndex) list.ItemID { return item.ID })
 }
 
 func (a *LiveAdapter) deleteItem(ctx context.Context, request core.ActionRequest, item liveItem) (core.ActionResult, error) {
@@ -236,7 +252,7 @@ func (a *LiveAdapter) deleteItem(ctx context.Context, request core.ActionRequest
 		message = "deleted session " + item.Target
 		preferred = ""
 	} else {
-		session, window, err := sessionWindowFromTarget(core.BackendTarget(item.Target))
+		session, window, err := sessionWindowFromTarget(core.BackendTarget(item.MutationTarget))
 		if err != nil {
 			return core.ActionResult{}, err
 		}
@@ -246,36 +262,141 @@ func (a *LiveAdapter) deleteItem(ctx context.Context, request core.ActionRequest
 	if err := b.Apply(ctx, []backend.Action{action}); err != nil {
 		return core.ActionResult{}, fmt.Errorf("delete item %q: %w", item.ID, err)
 	}
-	return a.refreshAfter(ctx, message, func(itemIndex) list.ItemID { return preferred })
+	return a.refreshAfter(ctx, message, func(list.Snapshot, itemIndex) list.ItemID { return preferred })
 }
 
-func (a *LiveAdapter) refreshAfter(ctx context.Context, message string, selectItem func(itemIndex) list.ItemID) (core.ActionResult, error) {
+func (a *LiveAdapter) refreshAfter(ctx context.Context, message string, selectItem func(list.Snapshot, itemIndex) list.ItemID) (core.ActionResult, error) {
 	snapshot, err := a.loadSnapshot(ctx)
 	if err != nil {
 		return core.ActionResult{}, err
 	}
-	return core.ActionResult{Message: message, Snapshot: &snapshot, SelectItemID: selectItem(a.index)}, nil
+	return core.ActionResult{Message: message, Snapshot: &snapshot, SelectItemID: selectItem(snapshot, a.index)}, nil
 }
 
 func (a *LiveAdapter) loadSnapshot(ctx context.Context) (list.Snapshot, error) {
-	if err := ctx.Err(); err != nil {
+	result, err := a.queryState(ctx)
+	if err != nil {
 		return list.Snapshot{}, err
 	}
-	b, err := a.detectBackend()
+	snapshot, index, err := projectState(result, a.projection)
 	if err != nil {
-		return list.Snapshot{}, fmt.Errorf("failed to detect backend: %w", err)
-	}
-	result, err := b.QueryState(ctx)
-	if err != nil {
-		return list.Snapshot{}, fmt.Errorf("failed to query sessions: %w", err)
-	}
-	homeDir, _ := os.UserHomeDir()
-	snapshot, index, err := projectTree(result, homeDir)
-	if err != nil {
-		return list.Snapshot{}, fmt.Errorf("project live sessions: %w", err)
+		return list.Snapshot{}, err
 	}
 	a.index = index
 	return snapshot, nil
+}
+
+func (a *LiveAdapter) queryState(ctx context.Context) (backend.StateResult, error) {
+	if err := ctx.Err(); err != nil {
+		return backend.StateResult{}, err
+	}
+	b, err := a.detectBackend()
+	if err != nil {
+		return backend.StateResult{}, fmt.Errorf("failed to detect backend: %w", err)
+	}
+	result, err := b.QueryState(ctx)
+	if err != nil {
+		return backend.StateResult{}, fmt.Errorf("failed to query sessions: %w", err)
+	}
+	return result, nil
+}
+
+func projectState(result backend.StateResult, projection projectionKind) (list.Snapshot, itemIndex, error) {
+	homeDir, _ := os.UserHomeDir()
+	var snapshot list.Snapshot
+	var index itemIndex
+	var err error
+	if projection == projectionFlat {
+		snapshot, index, err = projectFlat(result, homeDir)
+	} else {
+		snapshot, index, err = projectTree(result, homeDir)
+	}
+	if err != nil {
+		return list.Snapshot{}, nil, fmt.Errorf("project live sessions: %w", err)
+	}
+	return snapshot, index, nil
+}
+
+func (a *LiveAdapter) toggleProjection(ctx context.Context, selectedID list.ItemID) (core.ActionResult, error) {
+	var selected liveItem
+	if selectedID != "" {
+		var err error
+		selected, err = a.resolveItem(selectedID)
+		if err != nil {
+			return core.ActionResult{}, err
+		}
+	}
+	next := projectionFlat
+	message := "showing flat destinations"
+	if a.projection == projectionFlat {
+		next = projectionTree
+		message = "showing session tree"
+	}
+	state, err := a.queryState(ctx)
+	if err != nil {
+		return core.ActionResult{}, err
+	}
+	snapshot, index, err := projectState(state, next)
+	if err != nil {
+		return core.ActionResult{}, err
+	}
+	preferred := preferredProjectionItem(selected, next, snapshot, index)
+	a.projection = next
+	a.index = index
+	return core.ActionResult{Message: message, Snapshot: &snapshot, SelectItemID: preferred}, nil
+}
+
+func preferredProjectionItem(selected liveItem, projection projectionKind, snapshot list.Snapshot, index itemIndex) list.ItemID {
+	if projection == projectionTree {
+		if selected.WindowID != "" {
+			if _, exists := index[selected.WindowID]; exists {
+				return selected.WindowID
+			}
+		}
+		if selected.SessionID != "" {
+			if _, exists := index[selected.SessionID]; exists {
+				return selected.SessionID
+			}
+		}
+		if snapshot.ActiveItemID != "" {
+			return snapshot.ActiveItemID
+		}
+		return firstMatchingItem(snapshot, index, func(liveItem) bool { return true })
+	}
+
+	if selected.WindowID != "" {
+		if id := firstMatchingItem(snapshot, index, func(item liveItem) bool {
+			return item.WindowID == selected.WindowID && item.PaneActive
+		}); id != "" {
+			return id
+		}
+	} else if selected.SessionID != "" {
+		if id := firstMatchingItem(snapshot, index, func(item liveItem) bool {
+			return item.SessionID == selected.SessionID && item.WindowActive && item.PaneActive
+		}); id != "" {
+			return id
+		}
+	}
+	if snapshot.ActiveItemID != "" {
+		return snapshot.ActiveItemID
+	}
+	return firstMatchingItem(snapshot, index, func(liveItem) bool { return true })
+}
+
+func firstMatchingItem(snapshot list.Snapshot, index itemIndex, matches func(liveItem) bool) list.ItemID {
+	var visit func([]list.Item) list.ItemID
+	visit = func(items []list.Item) list.ItemID {
+		for _, item := range items {
+			if live, exists := index[item.ID]; exists && matches(live) {
+				return item.ID
+			}
+			if id := visit(item.Children); id != "" {
+				return id
+			}
+		}
+		return ""
+	}
+	return visit(snapshot.Items)
 }
 
 func (a *LiveAdapter) resolveItem(id list.ItemID) (liveItem, error) {

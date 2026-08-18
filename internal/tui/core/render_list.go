@@ -46,29 +46,60 @@ func RenderTree(props TreeProps) []string {
 	if len(props.Rows) == 0 {
 		return []string{props.Styles.Meta.Render(truncateWidth(props.EmptyText, props.Width))}
 	}
+	left := make([]string, len(props.Rows))
+	columnWidth := 0
+	secondaryWidth := 0
+	alignSecondary := false
+	for i, row := range props.Rows {
+		left[i] = renderRowLine(row, props.Styles, props.Compact)
+		columnWidth = max(columnWidth, terminal.Width(left[i]))
+		secondaryWidth = max(secondaryWidth, terminal.Width(strings.TrimSpace(terminal.Sanitize(row.Secondary))))
+		alignSecondary = alignSecondary || (row.Depth == 0 && strings.TrimSpace(row.Secondary) != "")
+	}
+	const gap = 2
+	const minSecondaryWidth = 6
+	if alignSecondary && secondaryWidth > 0 && props.Width >= gap+minSecondaryWidth {
+		reserve := min(secondaryWidth, max(minSecondaryWidth, props.Width/2))
+		columnWidth = min(columnWidth, props.Width-gap-reserve)
+	}
 	lines := make([]string, 0, len(props.Rows))
-	for _, row := range props.Rows {
-		line := renderRowLine(row, props.Styles, props.Compact)
-		line = composeRowLine(row, line, props.Width, props.Compact, props.Styles)
+	for i, row := range props.Rows {
+		line := composeRowLine(row, left[i], columnWidth, props.Width, props.Compact, alignSecondary, props.Styles)
 		lines = append(lines, styleRowLine(row, line, props.Width, props.Styles))
 	}
 	return lines
 }
 
-func composeRowLine(row TreeRowProps, left string, width int, compact bool, styles TreeStyles) string {
+func composeRowLine(row TreeRowProps, left string, columnWidth, width int, compact, alignSecondary bool, styles TreeStyles) string {
 	secondary := strings.TrimSpace(terminal.Sanitize(row.Secondary))
-	if compact || secondary == "" {
+	if (compact && !alignSecondary) || secondary == "" {
 		return truncateWidth(left, width)
 	}
 	const gap = 2
 	const minSecondaryWidth = 6
 	leftWidth := terminal.Width(left)
-	available := width - leftWidth - gap
-	if available < minSecondaryWidth {
+	if !alignSecondary {
+		available := width - leftWidth - gap
+		if available < minSecondaryWidth {
+			return truncateWidth(left, width)
+		}
+		shortened := shortenPath(secondary, available)
+		padding := max(gap, width-leftWidth-terminal.Width(shortened))
+		style := styles.Secondary
+		if row.Selected {
+			style = styles.SecondarySelected
+		}
+		return left + strings.Repeat(" ", padding) + style.Render(shortened)
+	}
+	if width < gap+minSecondaryWidth {
 		return truncateWidth(left, width)
 	}
+	leftBudget := min(columnWidth, width-gap-minSecondaryWidth)
+	left = truncateWidth(left, leftBudget)
+	leftWidth = terminal.Width(left)
+	available := width - leftBudget - gap
 	shortened := shortenPath(secondary, available)
-	padding := max(gap, width-leftWidth-terminal.Width(shortened))
+	padding := leftBudget - leftWidth + gap
 	style := styles.Secondary
 	if row.Selected {
 		style = styles.SecondarySelected
@@ -88,11 +119,29 @@ func shortenPath(path string, maxWidth int) string {
 	if maxWidth <= len(ellipsis) {
 		return terminal.Truncate(path, maxWidth)
 	}
-	if index := strings.LastIndex(path, "/"); index > 0 {
-		tail := path[index:]
-		if tailWidth := terminal.Width(tail); tailWidth+len(ellipsis)+1 <= maxWidth {
-			headBudget := maxWidth - len(ellipsis) - tailWidth
-			return terminal.Cut(path, 0, headBudget) + ellipsis + tail
+	prefix, rest := "", path
+	switch {
+	case strings.HasPrefix(path, "~/"):
+		prefix, rest = "~/", path[2:]
+	case strings.HasPrefix(path, "/"):
+		prefix, rest = "/", path[1:]
+	}
+	components := strings.FieldsFunc(rest, func(r rune) bool { return r == '/' })
+	if len(components) > 1 {
+		tail := ""
+		for i := len(components) - 1; i >= 0; i-- {
+			candidateTail := components[i]
+			if tail != "" {
+				candidateTail += "/" + tail
+			}
+			candidate := prefix + ellipsis + "/" + candidateTail
+			if terminal.Width(candidate) > maxWidth {
+				break
+			}
+			tail = candidateTail
+		}
+		if tail != "" {
+			return prefix + ellipsis + "/" + tail
 		}
 	}
 	available := maxWidth - len(ellipsis)
