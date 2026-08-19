@@ -105,35 +105,33 @@ func headerRight(m model) string {
 	if m.busy {
 		return m.status
 	}
-	return rootPositionLabel(m.items.Snapshot(), selectedItemID(m))
+	return rootCountLabel(m.items.Snapshot(), m.items.Rows())
 }
 
-func selectedItemID(m model) list.ItemID {
-	if selected, ok := m.selectedRow(); ok {
-		return selected.Item.ID
-	}
-	return ""
-}
-
-func rootPositionLabel(snapshot list.Snapshot, selected list.ItemID) string {
+func rootCountLabel(snapshot list.Snapshot, rows []list.Row) string {
 	total := len(snapshot.Items)
 	if total == 0 {
 		return ""
 	}
-	for i, item := range snapshot.Items {
-		if containsItem(item, selected) {
-			return fmt.Sprintf("%d/%d", i+1, total)
+	shownIDs := make(map[list.ItemID]struct{}, len(rows))
+	for _, row := range rows {
+		shownIDs[row.Item.ID] = struct{}{}
+	}
+	shown := 0
+	for _, item := range snapshot.Items {
+		if containsAnyItem(item, shownIDs) {
+			shown++
 		}
 	}
-	return fmt.Sprintf("%d", total)
+	return fmt.Sprintf("%d/%d", shown, total)
 }
 
-func containsItem(item list.Item, id list.ItemID) bool {
-	if item.ID == id {
+func containsAnyItem(item list.Item, ids map[list.ItemID]struct{}) bool {
+	if _, exists := ids[item.ID]; exists {
 		return true
 	}
 	for _, child := range item.Children {
-		if containsItem(child, id) {
+		if containsAnyItem(child, ids) {
 			return true
 		}
 	}
