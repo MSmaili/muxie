@@ -3,8 +3,10 @@ package tui
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/MSmaili/hetki/internal/backend"
+	"github.com/MSmaili/hetki/internal/frecency"
 	"github.com/MSmaili/hetki/internal/tui/list"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -146,8 +148,83 @@ func itemByID(items []list.Item, id list.ItemID) list.Item {
 	return list.Item{}
 }
 
-func BenchmarkProjectFlatTenThousandPanes(b *testing.B) {
+func TestProjectFlatUsesTotalFrecencyOrderAndFilteredTieBreaks(t *testing.T) {
+	now := time.Unix(2_000_000, 0)
+	scores := frecency.NewScores([]frecency.Record{
+		{Path: "/hot", Session: "old", Rank: 10, LastUsed: now.Unix()},
+		{Path: "/cold", Session: "alpha", Rank: 8, LastUsed: now.Unix()},
+		{Path: "/shared", Session: "alpha", Rank: 1, LastUsed: now.Unix()},
+		{Path: "/shared", Session: "beta", Rank: 2, LastUsed: now.Unix()},
+	}, now)
+	state := backend.StateResult{Sessions: []backend.Session{
+		{ID: "$1", Name: "zeta", Windows: []backend.Window{{ID: "@1", Name: "hot", Index: 5, Panes: []backend.Pane{{ID: "%1", Path: "/hot"}}}}},
+		{ID: "$2", Name: "alpha", Windows: []backend.Window{
+			{ID: "@2", Name: "cold", Index: 1, Panes: []backend.Pane{{ID: "%2", Path: "/cold"}}},
+			{ID: "@3", Name: "shared", Index: 2, Panes: []backend.Pane{{ID: "%3", Path: "/shared"}}},
+		}},
+		{ID: "$3", Name: "beta", Windows: []backend.Window{{ID: "@4", Name: "shared", Index: 0, Panes: []backend.Pane{{ID: "%4", Path: "/shared"}}}}},
+	}}
+
+	snapshot, _, err := projectFlatRanked(state, "", scores)
+	require.NoError(t, err)
+	assert.Equal(t, []list.ItemID{
+		destinationItemID("$1", "@1", "/hot"),
+		destinationItemID("$2", "@2", "/cold"),
+		destinationItemID("$3", "@4", "/shared"),
+		destinationItemID("$2", "@3", "/shared"),
+	}, itemIDs(snapshot.Items))
+
+	model, err := list.New(snapshot)
+	require.NoError(t, err)
+	model.SetQuery("shared")
+	require.Len(t, model.Rows(), 2)
+	assert.Equal(t, destinationItemID("$3", "@4", "/shared"), model.Rows()[0].Item.ID)
+}
+
+func TestDestinationOrderHasDeterministicFallbacks(t *testing.T) {
+	base := liveItem{SessionName: "same", WindowIndex: 1, RawPath: "/same", SessionTarget: "$1", WindowID: "window:@1"}
+	for _, test := range []struct {
+		name  string
+		left  liveItem
+		right liveItem
+	}{
+		{name: "session name", left: liveItem{SessionName: "a"}, right: liveItem{SessionName: "b"}},
+		{name: "window index", left: liveItem{WindowIndex: 1}, right: liveItem{WindowIndex: 2}},
+		{name: "raw path", left: liveItem{RawPath: "/a"}, right: liveItem{RawPath: "/b"}},
+		{name: "session ID", left: liveItem{SessionTarget: "$1"}, right: liveItem{SessionTarget: "$2"}},
+		{name: "window ID", left: liveItem{WindowID: "window:@1"}, right: liveItem{WindowID: "window:@2"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			left, right := base, base
+			if test.left.SessionName != "" {
+				left.SessionName, right.SessionName = test.left.SessionName, test.right.SessionName
+			} else if test.left.WindowIndex != 0 {
+				left.WindowIndex, right.WindowIndex = test.left.WindowIndex, test.right.WindowIndex
+			} else if test.left.RawPath != "" {
+				left.RawPath, right.RawPath = test.left.RawPath, test.right.RawPath
+			} else if test.left.SessionTarget != "" {
+				left.SessionTarget, right.SessionTarget = test.left.SessionTarget, test.right.SessionTarget
+			} else {
+				left.WindowID, right.WindowID = test.left.WindowID, test.right.WindowID
+			}
+			assert.True(t, destinationLess(left, right, frecency.Scores{}))
+			assert.False(t, destinationLess(right, left, frecency.Scores{}))
+		})
+	}
+}
+
+func itemIDs(items []list.Item) []list.ItemID {
+	ids := make([]list.ItemID, len(items))
+	for i, item := range items {
+		ids[i] = item.ID
+	}
+	return ids
+}
+
+func BenchmarkProjectFlatRankTenThousandPanes(b *testing.B) {
 	state := backend.StateResult{}
+	records := make([]frecency.Record, 0, 10_000)
+	now := time.Unix(2_000_000, 0)
 	windowID, paneID := 0, 0
 	for sessionIndex := range 100 {
 		session := backend.Session{ID: fmt.Sprintf("$%d", sessionIndex), Name: fmt.Sprintf("session-%d", sessionIndex)}
@@ -156,8 +233,10 @@ func BenchmarkProjectFlatTenThousandPanes(b *testing.B) {
 			window := backend.Window{ID: fmt.Sprintf("@%d", windowID), Name: fmt.Sprintf("window-%d", windowIndex), Index: windowIndex}
 			for paneIndex := range 5 {
 				paneID++
-				window.Panes = append(window.Panes, backend.Pane{
-					ID: fmt.Sprintf("%%%d", paneID), Index: paneIndex, Path: fmt.Sprintf("/work/%d/%d/%d", sessionIndex, windowIndex, paneIndex),
+				path := fmt.Sprintf("/work/%d/%d/%d", sessionIndex, windowIndex, paneIndex)
+				window.Panes = append(window.Panes, backend.Pane{ID: fmt.Sprintf("%%%d", paneID), Index: paneIndex, Path: path})
+				records = append(records, frecency.Record{
+					Path: path, Session: session.Name, Rank: float64(paneID%10 + 1), LastUsed: now.Unix(),
 				})
 			}
 			session.Windows = append(session.Windows, window)
@@ -165,9 +244,10 @@ func BenchmarkProjectFlatTenThousandPanes(b *testing.B) {
 		state.Sessions = append(state.Sessions, session)
 	}
 
+	scores := frecency.NewScores(records, now)
 	b.ReportAllocs()
 	for b.Loop() {
-		_, _, err := projectFlat(state, "/home/me")
+		_, _, err := projectFlatRanked(state, "/home/me", scores)
 		if err != nil {
 			b.Fatal(err)
 		}

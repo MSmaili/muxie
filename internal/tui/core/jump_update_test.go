@@ -45,6 +45,7 @@ func TestSemicolonIsFilterTextThenLabelsThePreservedResult(t *testing.T) {
 		SearchFields: []list.SearchField{{Tier: list.SearchPrimary, Text: "semi;colon"}},
 	}}}
 	m := newModel(snapshot, nil)
+	m, _ = updateModel(t, m, printableKey("/"))
 
 	m, _ = updateModel(t, m, printableKey(";"))
 	require.Equal(t, modeFilter, m.mode)
@@ -58,8 +59,7 @@ func TestSemicolonIsFilterTextThenLabelsThePreservedResult(t *testing.T) {
 }
 
 func TestJumpLabelsSessionWindowAndFilteredTreeRows(t *testing.T) {
-	m := newModel(interactionSnapshot(), nil)
-	m.mode = modeBrowse
+	m := browseModel(newModel(interactionSnapshot(), nil))
 	m, _ = updateModel(t, m, printableKey(";"))
 	require.Equal(t, []list.ItemID{"session-1", "window-1", "window-2", "session-2", "window-3"}, candidateIDs(m.jump))
 
@@ -75,7 +75,7 @@ func TestJumpFreezesOnlyVisibleViewportCandidatesAndEscapeRestoresState(t *testi
 	m = m.reflow()
 	m.items.SetQuery("item")
 	m.items.Bottom()
-	m.mode = modeBrowse
+	m = browseModel(m)
 	beforeQuery := m.items.Query()
 	beforeCursor, beforeOffset := m.items.Cursor(), m.items.Offset()
 	beforeVisible := visibleIDs(m)
@@ -107,8 +107,7 @@ func TestJumpRoutesShortcutLabelsBeforeNormalActions(t *testing.T) {
 				return ActionResult{}, nil
 			})
 			m.width, m.height = 100, 40
-			m = m.reflow()
-			m.mode = modeBrowse
+			m = browseModel(m.reflow())
 			m, _ = updateModel(t, m, printableKey(";"))
 
 			m, cmd := updateModel(t, m, printableKey(test.label))
@@ -128,8 +127,7 @@ func TestJumpAcceptsPartialLabelsAndReportsInvalidInput(t *testing.T) {
 		return ActionResult{}, nil
 	})
 	m.width, m.height = 100, 40
-	m = m.reflow()
-	m.mode = modeBrowse
+	m = browseModel(m.reflow())
 	m, _ = updateModel(t, m, printableKey(";"))
 	require.Len(t, []rune(m.jump.candidates[0].label), 2)
 
@@ -144,8 +142,7 @@ func TestJumpAcceptsPartialLabelsAndReportsInvalidInput(t *testing.T) {
 
 	m = newModel(flatJumpSnapshot(28), nil)
 	m.width, m.height = 100, 40
-	m = m.reflow()
-	m.mode = modeBrowse
+	m = browseModel(m.reflow())
 	m, _ = updateModel(t, m, printableKey(";"))
 	m, cmd = updateModel(t, m, printableKey("!"))
 	require.Nil(t, cmd)
@@ -157,8 +154,7 @@ func TestJumpAcceptsPartialLabelsAndReportsInvalidInput(t *testing.T) {
 func TestResizeAndSnapshotReplacementCancelJumpWithoutRetargeting(t *testing.T) {
 	m := newModel(flatJumpSnapshot(28), nil)
 	m.width, m.height = 100, 40
-	m = m.reflow()
-	m.mode = modeBrowse
+	m = browseModel(m.reflow())
 	m, _ = updateModel(t, m, printableKey(";"))
 	m, _ = updateModel(t, m, printableKey("a"))
 	require.Equal(t, "a", m.jump.input)
@@ -190,7 +186,7 @@ func TestJumpStaleTargetFailsLoudlyWithoutReplacingTheList(t *testing.T) {
 	})
 	before := m.items.Snapshot()
 	beforeCursor, beforeOffset := m.items.Cursor(), m.items.Offset()
-	m.mode = modeBrowse
+	m = browseModel(m)
 	m, _ = updateModel(t, m, printableKey(";"))
 	m, cmd := updateModel(t, m, printableKey("s"))
 	require.NotNil(t, cmd)
@@ -208,7 +204,7 @@ func TestJumpStaleTargetFailsLoudlyWithoutReplacingTheList(t *testing.T) {
 func TestSlashFromJumpEntersFilterWithoutChangingTheQuery(t *testing.T) {
 	m := newModel(flatJumpSnapshot(2), nil)
 	m.items.SetQuery("item")
-	m.mode = modeBrowse
+	m = browseModel(m)
 	m, _ = updateModel(t, m, printableKey(";"))
 	m, _ = updateModel(t, m, printableKey("/"))
 	require.Equal(t, modeFilter, m.mode)

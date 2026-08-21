@@ -105,6 +105,9 @@ func headerRight(m model) string {
 	if m.busy {
 		return m.status
 	}
+	if notice := m.items.Snapshot().Notice; notice != "" {
+		return notice
+	}
 	return rootCountLabel(m.items.Snapshot(), m.items.Rows())
 }
 

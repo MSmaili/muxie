@@ -2,9 +2,13 @@ package tui
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/MSmaili/hetki/internal/backend"
+	"github.com/MSmaili/hetki/internal/frecency"
 	"github.com/MSmaili/hetki/internal/tui/core"
 	"github.com/MSmaili/hetki/internal/tui/list"
 	"github.com/stretchr/testify/assert"
@@ -18,6 +22,8 @@ type stubBackend struct {
 	applyCalls  [][]backend.Action
 	applyHook   func([]backend.Action)
 	switchCalls []string
+	switchErr   error
+	switchHook  func(string)
 }
 
 func (s *stubBackend) Name() string { return "stub" }
@@ -42,7 +48,10 @@ func (s *stubBackend) DryRun([]backend.Action) ([]string, error) { return nil, n
 func (s *stubBackend) Attach(context.Context, string) error      { return nil }
 func (s *stubBackend) Switch(_ context.Context, target string) error {
 	s.switchCalls = append(s.switchCalls, target)
-	return nil
+	if s.switchHook != nil {
+		s.switchHook(target)
+	}
+	return s.switchErr
 }
 
 func liveState() backend.StateResult {
@@ -55,9 +64,15 @@ func liveState() backend.StateResult {
 	}
 }
 
+func testAdapter(stub *stubBackend) *LiveAdapter {
+	adapter := newLiveAdapter(func(...string) (backend.Backend, error) { return stub, nil }, nil, nil)
+	adapter.projection = projectionTree
+	return adapter
+}
+
 func loadedAdapter(t *testing.T, stub *stubBackend) *LiveAdapter {
 	t.Helper()
-	adapter := NewLiveAdapter(func(...string) (backend.Backend, error) { return stub, nil })
+	adapter := testAdapter(stub)
 	_, err := adapter.Load(context.Background())
 	require.NoError(t, err)
 	return adapter
@@ -67,7 +82,7 @@ func text(value string) *string { return &value }
 
 func TestLiveAdapterProjectsPresentationAndKeepsTargetsInOwnerIndex(t *testing.T) {
 	stub := &stubBackend{state: liveState()}
-	adapter := NewLiveAdapter(func(...string) (backend.Backend, error) { return stub, nil })
+	adapter := testAdapter(stub)
 
 	snapshot, err := adapter.Load(context.Background())
 	require.NoError(t, err)
@@ -79,6 +94,129 @@ func TestLiveAdapterProjectsPresentationAndKeepsTargetsInOwnerIndex(t *testing.T
 	assert.Equal(t, list.ItemID("window:@1"), snapshot.ActiveItemID)
 	assert.Contains(t, snapshot.Items[0].Primary, "core")
 	assert.Equal(t, "$1:@1", adapter.index["window:@1"].Target)
+}
+
+func TestLiveAdapterStartsWithTheFlatProjection(t *testing.T) {
+	stub := &stubBackend{state: liveState()}
+	adapter := newLiveAdapter(func(...string) (backend.Backend, error) { return stub, nil }, nil, nil)
+
+	snapshot, err := adapter.Load(context.Background())
+	require.NoError(t, err)
+	require.Len(t, snapshot.Items, 1)
+	assert.Empty(t, snapshot.Items[0].Children)
+	assert.Equal(t, destinationItemID("$1", "@1", "/work/editor"), snapshot.ActiveItemID)
+}
+
+func TestLiveAdapterLoadsFrecencyBeforeProjectingFlatRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "frecency.json")
+	store := frecency.NewStore(path)
+	require.NoError(t, store.Record(context.Background(), "/z", "zeta"))
+	state := backend.StateResult{Sessions: []backend.Session{
+		{ID: "$1", Name: "alpha", Windows: []backend.Window{{ID: "@1", Name: "a", Panes: []backend.Pane{{ID: "%1", Path: "/a"}}}}},
+		{ID: "$2", Name: "zeta", Windows: []backend.Window{{ID: "@2", Name: "z", Panes: []backend.Pane{{ID: "%2", Path: "/z"}}}}},
+	}}
+	stub := &stubBackend{state: state}
+	adapter := newLiveAdapter(func(...string) (backend.Backend, error) { return stub, nil }, store, nil)
+
+	snapshot, err := adapter.Load(context.Background())
+	require.NoError(t, err)
+	require.Len(t, snapshot.Items, 2)
+	assert.Equal(t, destinationItemID("$2", "@2", "/z"), snapshot.Items[0].ID)
+}
+
+func TestLiveAdapterRecordsOnlyAfterSuccessfulNavigation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "frecency.json")
+	store := frecency.NewStore(path)
+	stub := &stubBackend{state: liveState()}
+	adapter := newLiveAdapter(func(...string) (backend.Backend, error) { return stub, nil }, store, nil)
+	snapshot, err := adapter.Load(context.Background())
+	require.NoError(t, err)
+	id := snapshot.Items[0].ID
+	result, err := adapter.Execute(context.Background(), core.ActionRequest{ActionID: core.ActionOpen, ItemID: id})
+	require.NoError(t, err)
+	stub.switchHook = func(string) {
+		records, loadErr := store.Load()
+		require.NoError(t, loadErr)
+		assert.Empty(t, records, "navigation was recorded before the backend switch")
+	}
+
+	require.NoError(t, adapter.Navigate(context.Background(), result.Navigation))
+	records, err := store.Load()
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, frecency.Record{Path: "/work/editor", Session: "core", Rank: 1, LastUsed: records[0].LastUsed}, records[0])
+
+	failedPath := filepath.Join(t.TempDir(), "frecency.json")
+	failedStore := frecency.NewStore(failedPath)
+	failedBackend := &stubBackend{state: liveState(), switchErr: errors.New("switch failed")}
+	failed := newLiveAdapter(func(...string) (backend.Backend, error) { return failedBackend, nil }, failedStore, nil)
+	failedSnapshot, err := failed.Load(context.Background())
+	require.NoError(t, err)
+	result, err = failed.Execute(context.Background(), core.ActionRequest{ActionID: core.ActionOpen, ItemID: failedSnapshot.Items[0].ID})
+	require.NoError(t, err)
+	require.Error(t, failed.Navigate(context.Background(), result.Navigation))
+	_, err = os.Stat(failedPath)
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestLiveAdapterRecordsTreeNavigationAtTheActivePanePath(t *testing.T) {
+	store := frecency.NewStore(filepath.Join(t.TempDir(), "frecency.json"))
+	stub := &stubBackend{state: liveState()}
+	adapter := newLiveAdapter(func(...string) (backend.Backend, error) { return stub, nil }, store, nil)
+	adapter.projection = projectionTree
+	snapshot, err := adapter.Load(context.Background())
+	require.NoError(t, err)
+	result, err := adapter.Execute(context.Background(), core.ActionRequest{ActionID: core.ActionOpen, ItemID: snapshot.Items[0].Children[0].ID})
+	require.NoError(t, err)
+	require.NoError(t, adapter.Navigate(context.Background(), result.Navigation))
+
+	records, err := store.Load()
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, "/work/editor", records[0].Path)
+	assert.Equal(t, "core", records[0].Session)
+}
+
+func TestLiveAdapterShowsInvalidFrecencyAndPreservesItBeforeRecording(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "frecency.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"version":`), 0600))
+	store := frecency.NewStore(path)
+	stub := &stubBackend{state: liveState()}
+	adapter := newLiveAdapter(func(...string) (backend.Backend, error) { return stub, nil }, store, nil)
+
+	snapshot, err := adapter.Load(context.Background())
+	require.NoError(t, err)
+	assert.Contains(t, snapshot.Notice, "frecency state")
+	result, err := adapter.Execute(context.Background(), core.ActionRequest{ActionID: core.ActionOpen, ItemID: snapshot.Items[0].ID})
+	require.NoError(t, err)
+	require.NoError(t, adapter.Navigate(context.Background(), result.Navigation))
+
+	backups, err := filepath.Glob(path + ".corrupt-*")
+	require.NoError(t, err)
+	require.Len(t, backups, 1)
+	original, err := os.ReadFile(backups[0])
+	require.NoError(t, err)
+	assert.Equal(t, `{"version":`, string(original))
+}
+
+func TestLiveAdapterPropagatesFrecencyCancellation(t *testing.T) {
+	adapter := newLiveAdapter(nil, frecency.NewStore(filepath.Join(t.TempDir(), "frecency.json")), nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, notice, err := adapter.loadFrecency(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, notice)
+}
+
+func TestLiveAdapterSurfacesUnavailableFrecencyWithoutBlockingLoad(t *testing.T) {
+	stub := &stubBackend{state: liveState()}
+	adapter := newLiveAdapter(func(...string) (backend.Backend, error) { return stub, nil }, nil, errors.New("home is unavailable"))
+
+	snapshot, err := adapter.Load(context.Background())
+	require.NoError(t, err)
+	assert.Contains(t, snapshot.Notice, "home is unavailable")
+	require.Len(t, snapshot.Items, 1)
 }
 
 func TestLiveAdapterResolvesOpenFromCurrentItemIndex(t *testing.T) {
@@ -321,7 +459,7 @@ func TestLiveAdapterRejectsMissingStableSessionAndWindowIDsDuringProjection(t *t
 			state := liveState()
 			test.edit(&state)
 			stub := &stubBackend{state: state}
-			adapter := NewLiveAdapter(func(...string) (backend.Backend, error) { return stub, nil })
+			adapter := newLiveAdapter(func(...string) (backend.Backend, error) { return stub, nil }, nil, nil)
 
 			_, err := adapter.Load(context.Background())
 			require.ErrorContains(t, err, test.want)

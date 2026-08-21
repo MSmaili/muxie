@@ -28,6 +28,7 @@ type liveItem struct {
 	MutationTarget string
 	SessionTarget  string
 	RawPath        string
+	WindowIndex    int
 	WindowActive   bool
 	PaneActive     bool
 }

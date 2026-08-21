@@ -47,6 +47,13 @@ func selectNode(t *testing.T, m model, id list.ItemID) model {
 	return m
 }
 
+func browseModel(m model) model {
+	m.mode = modeBrowse
+	m.initialJump = false
+	m.jump = jumpState{}
+	return m
+}
+
 func selectedNodeID(m model) list.ItemID {
 	if selected, ok := m.selectedRow(); ok {
 		return selected.Item.ID
@@ -63,6 +70,9 @@ func requireQuit(t *testing.T, cmd tea.Cmd) {
 
 func TestUpdateRoutesKeysByModeAndOverlay(t *testing.T) {
 	m := newModel(interactionSnapshot(), nil)
+	require.Equal(t, modeBrowse, m.mode)
+	require.True(t, m.initialJump)
+	m, _ = updateModel(t, m, printableKey("/"))
 	require.Equal(t, modeFilter, m.mode)
 
 	m, cmd := updateModel(t, m, printableKey("q"))
@@ -104,6 +114,7 @@ func TestEnterOpensSelectedItemFromFilter(t *testing.T) {
 		got = request
 		return ActionResult{}, nil
 	})
+	m, _ = updateModel(t, m, printableKey("/"))
 	m.items.SetQuery("server")
 	require.Equal(t, list.ItemID("window-2"), selectedNodeID(m))
 
@@ -136,7 +147,7 @@ func TestDirectActionKeysEmitStableActionAndItemIDs(t *testing.T) {
 				got = request
 				return ActionResult{}, nil
 			})
-			m.mode = modeBrowse
+			m = browseModel(m)
 			m = selectNode(t, m, test.selectedID)
 			m, cmd := updateModel(t, m, test.key)
 			require.True(t, m.busy)
@@ -156,7 +167,7 @@ func TestProjectionTogglePreservesTheFilterAndUsesPreferredSelection(t *testing.
 		require.Equal(t, ActionRequest{ActionID: ActionToggleProjection, ItemID: "window-2"}, request)
 		return ActionResult{Snapshot: &flat, SelectItemID: "destination-2"}, nil
 	})
-	m.mode = modeBrowse
+	m = browseModel(m)
 	m = selectNode(t, m, "window-2")
 	m.items.SetQuery("server")
 
@@ -179,7 +190,7 @@ func TestPromptAndConfirmationKeepTheOriginatingItemID(t *testing.T) {
 		}
 		return ActionResult{}, nil
 	})
-	m.mode = modeBrowse
+	m = browseModel(m)
 	m = selectNode(t, m, "window-2")
 
 	m, cmd := updateModel(t, m, printableKey("e"))

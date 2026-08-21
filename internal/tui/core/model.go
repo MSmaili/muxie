@@ -63,16 +63,17 @@ type confirmState struct {
 }
 
 type model struct {
-	items      list.Model
-	mode       uiMode
-	status     string
-	err        error
-	busy       bool
-	input      inputState
-	confirm    confirmState
-	jump       jumpState
-	pending    *ActionRequest
-	navigation BackendTarget
+	items       list.Model
+	mode        uiMode
+	status      string
+	err         error
+	busy        bool
+	input       inputState
+	confirm     confirmState
+	jump        jumpState
+	initialJump bool
+	pending     *ActionRequest
+	navigation  BackendTarget
 
 	width  int
 	height int
@@ -100,10 +101,13 @@ func newModelWithKeys(snapshot list.Snapshot, dispatch DispatchFunc, keys KeyMap
 		dispatch: dispatch,
 		keys:     keys,
 		theme:    defaultTheme(),
-		mode:     modeFilter,
-		status:   statusFilterHint,
+		mode:     modeBrowse,
 	}
-	return m.reflow(), nil
+	m = m.reflow()
+	if len(m.items.Rows()) > 0 {
+		m.initialJump = true
+	}
+	return m, nil
 }
 
 func (m model) reflow() model {

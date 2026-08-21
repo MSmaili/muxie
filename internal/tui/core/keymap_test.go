@@ -30,7 +30,7 @@ func TestModelUsesTheInjectedResolvedKeyMap(t *testing.T) {
 		return ActionResult{}, nil
 	}, keys)
 	require.NoError(t, err)
-	m.mode = modeBrowse
+	m = browseModel(m)
 
 	m, cmd := updateModel(t, m, printableKey("z"))
 	require.True(t, m.busy)

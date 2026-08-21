@@ -17,7 +17,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancelJump()
 		}
 		m.width, m.height = msg.Width, msg.Height
-		return m.reflow(), nil
+		m = m.reflow()
+		m.startInitialJump()
+		return m, nil
 	case actionResultMsg:
 		return m.handleActionResult(msg)
 	case tea.KeyPressMsg:
@@ -27,6 +29,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.busy {
 			return m, nil
 		}
+		m.startInitialJump()
 		switch m.mode {
 		case modeJump:
 			return m.updateJumpMode(msg)
@@ -163,6 +166,7 @@ func (m model) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.mode = modeJump
+		m.initialJump = false
 		m.err = nil
 	case m.keys.Matches(KeyModeNormal, ActionClearFilter, msg):
 		m.items.SetQuery("")
@@ -219,9 +223,19 @@ func (m model) updateJumpMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m.startItemRequest(ActionOpen, itemID)
 }
 
+func (m *model) startInitialJump() {
+	if !m.initialJump {
+		return
+	}
+	m.initialJump = false
+	m.mode = modeJump
+	m.jump = newJumpState(m.items.VisibleRows())
+}
+
 func (m *model) cancelJump() {
 	m.mode = modeBrowse
 	m.jump = jumpState{}
+	m.initialJump = false
 	m.err = nil
 }
 

@@ -35,6 +35,7 @@ type Item struct {
 type Snapshot struct {
 	Items        []Item
 	ActiveItemID ItemID
+	Notice       string
 }
 
 func Validate(snapshot Snapshot) error {

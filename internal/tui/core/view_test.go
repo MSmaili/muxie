@@ -7,6 +7,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestHeaderShowsNonFatalSnapshotNotice(t *testing.T) {
+	m := newModel(list.Snapshot{Notice: "frecency state is corrupt"}, nil)
+	require.Equal(t, "frecency state is corrupt", headerRight(m))
+	m.busy = true
+	m.status = "refreshing..."
+	require.Equal(t, "refreshing...", headerRight(m))
+}
+
 func TestRootCountLabelShowsFilteredRootsOverTotal(t *testing.T) {
 	snapshot := list.Snapshot{Items: []list.Item{
 		{

@@ -2,12 +2,15 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/MSmaili/hetki/internal/backend"
+	"github.com/MSmaili/hetki/internal/frecency"
 	"github.com/MSmaili/hetki/internal/tui/core"
 	"github.com/MSmaili/hetki/internal/tui/list"
 )
@@ -19,15 +22,29 @@ const (
 	projectionFlat
 )
 
+type navigationRecord struct {
+	target  string
+	path    string
+	session string
+}
+
 type LiveAdapter struct {
 	DetectBackend func(...string) (backend.Backend, error)
 	cached        backend.Backend
 	index         itemIndex
 	projection    projectionKind
+	frecency      *frecency.Store
+	frecencyErr   error
+	pendingRecord *navigationRecord
 }
 
 func NewLiveAdapter(detectBackend func(...string) (backend.Backend, error)) *LiveAdapter {
-	return &LiveAdapter{DetectBackend: detectBackend}
+	store, err := frecency.DefaultStore()
+	return newLiveAdapter(detectBackend, store, err)
+}
+
+func newLiveAdapter(detectBackend func(...string) (backend.Backend, error), store *frecency.Store, storeErr error) *LiveAdapter {
+	return &LiveAdapter{DetectBackend: detectBackend, projection: projectionFlat, frecency: store, frecencyErr: storeErr}
 }
 
 func (a *LiveAdapter) Load(ctx context.Context) (list.Snapshot, error) {
@@ -55,6 +72,7 @@ func (a *LiveAdapter) Execute(ctx context.Context, request core.ActionRequest) (
 	}
 	switch request.ActionID {
 	case core.ActionOpen:
+		a.pendingRecord = nil
 		if strings.TrimSpace(item.Target) == "" {
 			return core.ActionResult{}, fmt.Errorf("item %q has no navigation target", item.ID)
 		}
@@ -68,6 +86,9 @@ func (a *LiveAdapter) Execute(ctx context.Context, request core.ActionRequest) (
 		}
 		if !liveItemExists(state, item) {
 			return core.ActionResult{}, fmt.Errorf("selected item %q is stale", item.ID)
+		}
+		if record, ok := navigationRecordForItem(state, item); ok {
+			a.pendingRecord = &record
 		}
 		return core.ActionResult{Message: "switching to " + item.Target, Navigation: core.BackendTarget(item.Target)}, nil
 	case core.ActionCreateWindow:
@@ -108,6 +129,47 @@ func liveItemExists(state backend.StateResult, item liveItem) bool {
 	return false
 }
 
+func navigationRecordForItem(state backend.StateResult, item liveItem) (navigationRecord, bool) {
+	for _, session := range state.Sessions {
+		if session.ID != item.SessionTarget {
+			continue
+		}
+		if item.Kind == liveSession {
+			for _, window := range session.Windows {
+				if !window.Active {
+					continue
+				}
+				if pane, ok := activePane(window.Panes); ok && pane.Path != "" {
+					return navigationRecord{target: item.Target, path: pane.Path, session: session.Name}, true
+				}
+			}
+			return navigationRecord{}, false
+		}
+		for _, window := range session.Windows {
+			if item.MutationTarget != session.ID+":"+window.ID {
+				continue
+			}
+			if item.Kind == liveDestination {
+				return navigationRecord{target: item.Target, path: item.RawPath, session: session.Name}, item.RawPath != ""
+			}
+			if pane, ok := activePane(window.Panes); ok && pane.Path != "" {
+				return navigationRecord{target: item.Target, path: pane.Path, session: session.Name}, true
+			}
+			return navigationRecord{}, false
+		}
+	}
+	return navigationRecord{}, false
+}
+
+func activePane(panes []backend.Pane) (backend.Pane, bool) {
+	for _, pane := range panes {
+		if pane.Active {
+			return pane, true
+		}
+	}
+	return backend.Pane{}, false
+}
+
 func (a *LiveAdapter) Navigate(ctx context.Context, navigation core.BackendTarget) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -116,12 +178,19 @@ func (a *LiveAdapter) Navigate(ctx context.Context, navigation core.BackendTarge
 	if target == "" {
 		return fmt.Errorf("empty navigation target")
 	}
+	record := a.pendingRecord
+	a.pendingRecord = nil
 	b, err := a.detectBackend()
 	if err != nil {
 		return fmt.Errorf("failed to detect backend: %w", err)
 	}
 	if err := b.Switch(ctx, target); err != nil {
 		return fmt.Errorf("switch to %q: %w", target, err)
+	}
+	if record != nil && record.target == target && a.frecency != nil {
+		if err := a.frecency.Record(ctx, record.path, record.session); err != nil {
+			return fmt.Errorf("record navigation to %q: %w", target, err)
+		}
 	}
 	return nil
 }
@@ -278,7 +347,11 @@ func (a *LiveAdapter) loadSnapshot(ctx context.Context) (list.Snapshot, error) {
 	if err != nil {
 		return list.Snapshot{}, err
 	}
-	snapshot, index, err := projectState(result, a.projection)
+	scores, notice, err := a.loadFrecency(ctx)
+	if err != nil {
+		return list.Snapshot{}, err
+	}
+	snapshot, index, err := projectState(result, a.projection, scores, notice)
 	if err != nil {
 		return list.Snapshot{}, err
 	}
@@ -301,19 +374,37 @@ func (a *LiveAdapter) queryState(ctx context.Context) (backend.StateResult, erro
 	return result, nil
 }
 
-func projectState(result backend.StateResult, projection projectionKind) (list.Snapshot, itemIndex, error) {
+func (a *LiveAdapter) loadFrecency(ctx context.Context) (frecency.Scores, string, error) {
+	if a.frecencyErr != nil {
+		return frecency.Scores{}, "frecency unavailable: " + a.frecencyErr.Error(), nil
+	}
+	if a.frecency == nil {
+		return frecency.Scores{}, "", nil
+	}
+	records, err := a.frecency.LoadContext(ctx)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return frecency.Scores{}, "", err
+	}
+	if err != nil {
+		return frecency.Scores{}, "frecency state: " + err.Error(), nil
+	}
+	return frecency.NewScores(records, time.Now()), "", nil
+}
+
+func projectState(result backend.StateResult, projection projectionKind, scores frecency.Scores, notice string) (list.Snapshot, itemIndex, error) {
 	homeDir, _ := os.UserHomeDir()
 	var snapshot list.Snapshot
 	var index itemIndex
 	var err error
 	if projection == projectionFlat {
-		snapshot, index, err = projectFlat(result, homeDir)
+		snapshot, index, err = projectFlatRanked(result, homeDir, scores)
 	} else {
 		snapshot, index, err = projectTree(result, homeDir)
 	}
 	if err != nil {
 		return list.Snapshot{}, nil, fmt.Errorf("project live sessions: %w", err)
 	}
+	snapshot.Notice = notice
 	return snapshot, index, nil
 }
 
@@ -336,7 +427,11 @@ func (a *LiveAdapter) toggleProjection(ctx context.Context, selectedID list.Item
 	if err != nil {
 		return core.ActionResult{}, err
 	}
-	snapshot, index, err := projectState(state, next)
+	scores, notice, err := a.loadFrecency(ctx)
+	if err != nil {
+		return core.ActionResult{}, err
+	}
+	snapshot, index, err := projectState(state, next, scores, notice)
 	if err != nil {
 		return core.ActionResult{}, err
 	}

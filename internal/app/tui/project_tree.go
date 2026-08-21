@@ -59,7 +59,8 @@ func projectTree(result backend.StateResult, homeDir string) (list.Snapshot, ite
 			index[itemID] = liveItem{
 				ID: itemID, ParentID: sessionID, SessionID: sessionID, WindowID: windowID, Kind: liveWindow,
 				Label: label, Name: window.Name, SessionName: session.Name, WindowName: window.Name,
-				Target: mutationTarget, MutationTarget: mutationTarget, SessionTarget: sessionTarget, WindowActive: window.Active,
+				Target: mutationTarget, MutationTarget: mutationTarget, SessionTarget: sessionTarget,
+				WindowIndex: window.Index, WindowActive: window.Active,
 			}
 			activeWindow := result.Active.WindowID == window.ID || (result.Active.WindowID == "" && result.Active.WindowIndex == window.Index)
 			if activeSession && activeWindow {

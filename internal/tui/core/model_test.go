@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/MSmaili/hetki/internal/terminal"
 	"github.com/MSmaili/hetki/internal/tui/list"
 )
@@ -27,6 +28,26 @@ func TestRunRejectsInvalidInitialProjectionBeforeStartingTea(t *testing.T) {
 	_, err := Run(context.Background(), invalid, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate item ID") {
 		t.Fatalf("Run error = %v, want duplicate item ID", err)
+	}
+}
+
+func TestModelStartsInJumpUnlessTheProjectionIsEmpty(t *testing.T) {
+	m := newModel(viewSnapshot(), nil)
+	if m.mode != modeBrowse || !m.initialJump || len(m.jump.candidates) != 0 {
+		t.Fatalf("non-empty startup was not waiting for its first layout: mode=%q pending=%t candidates=%d", m.mode, m.initialJump, len(m.jump.candidates))
+	}
+	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 40, Height: 8})
+	if m.mode != modeJump || len(m.jump.candidates) == 0 {
+		t.Fatalf("first layout canceled startup jump: mode=%q candidates=%d", m.mode, len(m.jump.candidates))
+	}
+	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 41, Height: 8})
+	if m.mode != modeBrowse {
+		t.Fatalf("later resize kept stale jump labels: mode=%q", m.mode)
+	}
+
+	empty := newModel(list.Snapshot{}, nil)
+	if empty.mode != modeBrowse || len(empty.jump.candidates) != 0 {
+		t.Fatalf("empty startup mode = %q with %d candidates, want normal", empty.mode, len(empty.jump.candidates))
 	}
 }
 

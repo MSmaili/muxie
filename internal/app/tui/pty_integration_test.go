@@ -48,7 +48,11 @@ func TestTerminalRestoredBeforeNavigation(t *testing.T) {
 		b, err := backendtmux.NewBackend()
 		require.NoError(t, err)
 		driver := ptyDriver{navigate: func(ctx context.Context, target core.BackendTarget) error {
-			return b.Switch(ctx, string(target))
+			if err := b.Switch(ctx, string(target)); err != nil {
+				return err
+			}
+			fmt.Println("RECORDED")
+			return nil
 		}}
 		require.NoError(t, (Service{Driver: driver, RunUI: core.RunWithKeyMap}).Run(context.Background()))
 		return
@@ -80,10 +84,6 @@ func TestTerminalRestoredBeforeNavigation(t *testing.T) {
 	cmd.Stdin = input
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-		_, _ = inputWriter.Write([]byte("\x1b"))
-		time.Sleep(300 * time.Millisecond)
-		_, _ = inputWriter.Write([]byte(";"))
-		time.Sleep(100 * time.Millisecond)
 		_, _ = inputWriter.Write([]byte("a"))
 		_ = inputWriter.Close()
 	}()
@@ -95,6 +95,8 @@ func TestTerminalRestoredBeforeNavigation(t *testing.T) {
 	bytesOut := output.Bytes()
 	restored := bytes.Index(bytesOut, []byte("\x1b[?1049l"))
 	navigation := bytes.Index(bytesOut, []byte("NAVIGATION"))
+	recorded := bytes.Index(bytesOut, []byte("RECORDED"))
 	require.NotEqual(t, -1, restored, "alternate screen was not restored: %q", output.String())
 	require.Greater(t, navigation, restored, "navigation ran before terminal restoration: %q", output.String())
+	require.Greater(t, recorded, navigation, "recording ran before navigation succeeded: %q", output.String())
 }

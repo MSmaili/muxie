@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/MSmaili/hetki/internal/backend"
+	"github.com/MSmaili/hetki/internal/frecency"
 	"github.com/MSmaili/hetki/internal/tui/list"
 )
 
@@ -16,6 +17,10 @@ type pathGroup struct {
 }
 
 func projectFlat(result backend.StateResult, homeDir string) (list.Snapshot, itemIndex, error) {
+	return projectFlatRanked(result, homeDir, frecency.Scores{})
+}
+
+func projectFlatRanked(result backend.StateResult, homeDir string, scores frecency.Scores) (list.Snapshot, itemIndex, error) {
 	snapshot := list.Snapshot{}
 	index := make(itemIndex)
 	for _, session := range result.Sessions {
@@ -52,7 +57,7 @@ func projectFlat(result backend.StateResult, homeDir string) (list.Snapshot, ite
 					ID: id, SessionID: sessionID, WindowID: windowID, Kind: liveDestination,
 					Label: name, Name: window.Name, SessionName: session.Name, WindowName: window.Name,
 					Target: pane.ID, MutationTarget: mutationTarget, SessionTarget: session.ID, RawPath: group.path,
-					WindowActive: window.Active, PaneActive: pane.Active,
+					WindowIndex: window.Index, WindowActive: window.Active, PaneActive: pane.Active,
 				}
 				if pane.ID == result.Active.PaneID {
 					snapshot.ActiveItemID = id
@@ -60,10 +65,35 @@ func projectFlat(result backend.StateResult, homeDir string) (list.Snapshot, ite
 			}
 		}
 	}
+	sort.Slice(snapshot.Items, func(i, j int) bool {
+		return destinationLess(index[snapshot.Items[i].ID], index[snapshot.Items[j].ID], scores)
+	})
 	if err := validateProjection(snapshot, index); err != nil {
 		return list.Snapshot{}, nil, err
 	}
 	return snapshot, index, nil
+}
+
+func destinationLess(left, right liveItem, scores frecency.Scores) bool {
+	if leftScore, rightScore := scores.Path(left.RawPath), scores.Path(right.RawPath); leftScore != rightScore {
+		return leftScore > rightScore
+	}
+	if leftScore, rightScore := scores.Record(left.RawPath, left.SessionName), scores.Record(right.RawPath, right.SessionName); leftScore != rightScore {
+		return leftScore > rightScore
+	}
+	if left.SessionName != right.SessionName {
+		return left.SessionName < right.SessionName
+	}
+	if left.WindowIndex != right.WindowIndex {
+		return left.WindowIndex < right.WindowIndex
+	}
+	if left.RawPath != right.RawPath {
+		return left.RawPath < right.RawPath
+	}
+	if left.SessionTarget != right.SessionTarget {
+		return left.SessionTarget < right.SessionTarget
+	}
+	return left.WindowID < right.WindowID
 }
 
 func appendPathSearchFields(fields []list.SearchField, rawPath, homeDir string) []list.SearchField {
