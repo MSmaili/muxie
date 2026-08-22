@@ -39,6 +39,12 @@ func TestModelUsesTheInjectedResolvedKeyMap(t *testing.T) {
 	require.Equal(t, ActionRequest{ActionID: ActionRefresh}, got)
 }
 
+func TestDefaultJumpBindingsKeepControlNavigationOutOfTheLabelAlphabet(t *testing.T) {
+	keys := DefaultKeyMap()
+	require.Equal(t, []string{"ctrl+p"}, keys.Keys(KeyModeJump, ActionMoveUp))
+	require.Equal(t, []string{"ctrl+n"}, keys.Keys(KeyModeJump, ActionMoveDown))
+}
+
 func TestDefaultConfirmationBindingsPreserveUppercaseChoices(t *testing.T) {
 	keys := DefaultKeyMap()
 	require.Contains(t, keys.Keys(KeyModeConfirm, ActionConfirm), "Y")

@@ -54,6 +54,15 @@ func (j jumpState) labelFor(id list.ItemID) string {
 	return ""
 }
 
+func (j jumpState) neighbor(id list.ItemID, delta int) (list.ItemID, bool) {
+	for i, candidate := range j.candidates {
+		if candidate.itemID == id {
+			return j.candidates[min(max(i+delta, 0), len(j.candidates)-1)].itemID, true
+		}
+	}
+	return "", false
+}
+
 func (j *jumpState) enter(text string) (list.ItemID, bool, bool) {
 	j.input += text
 	validPrefix := false

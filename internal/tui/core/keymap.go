@@ -90,6 +90,8 @@ func DefaultKeyMap() KeyMap {
 		},
 		KeyModeJump: {
 			{Action: ActionCancel, Keys: []string{"esc"}},
+			{Action: ActionMoveUp, Keys: []string{"ctrl+p"}},
+			{Action: ActionMoveDown, Keys: []string{"ctrl+n"}},
 			{Action: ActionFilter, Keys: []string{"/"}},
 		},
 		KeyModeFilter: {

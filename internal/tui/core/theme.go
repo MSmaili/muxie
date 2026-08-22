@@ -15,7 +15,6 @@ type theme struct {
 	activeRow         lipgloss.Style
 	selectedRow       lipgloss.Style
 	selectedHint      lipgloss.Style
-	jumpLabel         lipgloss.Style
 	rail              lipgloss.Style
 	sectionLine       lipgloss.Style
 	appBorder         lipgloss.Style
@@ -28,16 +27,15 @@ func defaultTheme() theme {
 	return theme{
 		meta:      lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
 		searchBox: lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
-		row:       lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
+		row:       lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
 		rootRow:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("224")),
 		childRow:  lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
 		secondary: lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true),
 		secondarySelected: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("252")).Background(selectionBg).Italic(true),
-		activeRow:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("181")),
-		selectedRow:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230")).Background(selectionBg),
+			Foreground(lipgloss.Color("240")).Background(selectionBg).Italic(true),
+		activeRow:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("224")),
+		selectedRow:  lipgloss.NewStyle().Background(selectionBg),
 		selectedHint: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("181")),
-		jumpLabel:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("110")),
 		rail:         lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
 		sectionLine:  lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
 		appBorder:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("110")).Padding(0, 2),

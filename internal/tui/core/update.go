@@ -198,6 +198,12 @@ func (m model) updateJumpMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case m.keys.Matches(KeyModeJump, ActionCancel, msg):
 		m.cancelJump()
 		return m, nil
+	case m.keys.Matches(KeyModeJump, ActionMoveUp, msg):
+		m.moveJump(-1)
+		return m, nil
+	case m.keys.Matches(KeyModeJump, ActionMoveDown, msg):
+		m.moveJump(1)
+		return m, nil
 	case m.keys.Matches(KeyModeJump, ActionFilter, msg):
 		m.cancelJump()
 		m.mode = modeFilter
@@ -221,6 +227,19 @@ func (m model) updateJumpMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.mode = modeBrowse
 	m.jump = jumpState{}
 	return m.startItemRequest(ActionOpen, itemID)
+}
+
+func (m *model) moveJump(delta int) {
+	m.jump.input = ""
+	m.err = nil
+	selected, ok := m.items.Selected()
+	if !ok {
+		return
+	}
+	target, ok := m.jump.neighbor(selected.Item.ID, delta)
+	if ok {
+		m.items.Select(target)
+	}
 }
 
 func (m *model) startInitialJump() {

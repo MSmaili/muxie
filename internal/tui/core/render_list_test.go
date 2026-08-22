@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/MSmaili/hetki/internal/terminal"
 )
 
 func TestShortenPath(t *testing.T) {
@@ -57,6 +58,43 @@ func TestRenderTreeShowsJumpLabelBesideTheRow(t *testing.T) {
 	line := RenderTree(TreeProps{Width: 40, Rows: []TreeRowProps{{Primary: "editor", JumpLabel: "aa"}}})[0]
 	if !strings.Contains(line, "aa") || !strings.Contains(line, "editor") {
 		t.Fatalf("jump label was not rendered beside row: %q", line)
+	}
+}
+
+func TestRenderTreeUsesFullWidthSelectionAndCompactIndicators(t *testing.T) {
+	selected := lipgloss.NewStyle().Background(lipgloss.Color("1"))
+	secondarySelected := lipgloss.NewStyle().Background(lipgloss.Color("1")).Italic(true)
+	styles := TreeStyles{
+		Secondary:         lipgloss.NewStyle().Italic(true),
+		SecondarySelected: secondarySelected,
+		SelectedRow:       selected,
+	}
+	got := RenderTree(TreeProps{Width: 24, Compact: true, Styles: styles, Rows: []TreeRowProps{{
+		Primary: "editor", Secondary: "~/code", JumpLabel: "a", Active: true, Selected: true,
+	}}})[0]
+	want := selected.Width(24).Render("│ a editor  " + secondarySelected.Render("~/code"))
+	if got != want {
+		t.Fatalf("selected row was not styled as one full-width line:\n got %q\nwant %q", got, want)
+	}
+	if plain := strings.TrimRight(terminal.Sanitize(got), " "); plain != "│ a editor  ~/code" {
+		t.Fatalf("selected row has excess markers or spacing: %q", plain)
+	}
+}
+
+func TestRenderTreeMakesOnlyTheActiveFlatRowBold(t *testing.T) {
+	styles := TreeStyles{
+		Row:       lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+		ActiveRow: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2")),
+	}
+	lines := RenderTree(TreeProps{Width: 24, Compact: true, Styles: styles, Rows: []TreeRowProps{
+		{Primary: "inactive", JumpLabel: "a"},
+		{Primary: "active", JumpLabel: "s", Active: true},
+	}})
+	if lines[0] != styles.Row.Render("  a inactive") {
+		t.Fatalf("inactive flat row used the wrong typography: %q", lines[0])
+	}
+	if lines[1] != styles.ActiveRow.Render("│ s active") {
+		t.Fatalf("active flat row used the wrong typography: %q", lines[1])
 	}
 }
 

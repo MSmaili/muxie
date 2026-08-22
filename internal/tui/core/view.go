@@ -38,8 +38,8 @@ func (m model) View() tea.View {
 		Width: innerW, EmptyText: emptyStateText(m), Rows: visibleRows, Compact: layout.compact,
 		Styles: TreeStyles{
 			Meta: t.meta, Row: t.row, RootRow: t.rootRow, ChildRow: t.childRow,
-			Secondary: t.secondary, SecondarySelected: t.secondarySelected,
-			ActiveRow: t.activeRow, SelectedRow: t.selectedRow, JumpLabel: t.jumpLabel, Rail: t.rail,
+			Secondary: t.secondary, SecondarySelected: t.secondarySelected, ActiveRow: t.activeRow,
+			SelectedRow: t.selectedRow, Rail: t.rail,
 		},
 	})
 

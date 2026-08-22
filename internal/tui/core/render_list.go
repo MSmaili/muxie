@@ -17,7 +17,6 @@ type TreeStyles struct {
 	SecondarySelected lipgloss.Style
 	ActiveRow         lipgloss.Style
 	SelectedRow       lipgloss.Style
-	JumpLabel         lipgloss.Style
 	Rail              lipgloss.Style
 }
 
@@ -85,11 +84,12 @@ func composeRowLine(row TreeRowProps, left string, columnWidth, width int, compa
 		}
 		shortened := shortenPath(secondary, available)
 		padding := max(gap, width-leftWidth-terminal.Width(shortened))
-		style := styles.Secondary
 		if row.Selected {
-			style = styles.SecondarySelected
+			shortened = styles.SecondarySelected.Render(shortened)
+		} else {
+			shortened = styles.Secondary.Render(shortened)
 		}
-		return left + strings.Repeat(" ", padding) + style.Render(shortened)
+		return left + strings.Repeat(" ", padding) + shortened
 	}
 	if width < gap+minSecondaryWidth {
 		return truncateWidth(left, width)
@@ -100,11 +100,12 @@ func composeRowLine(row TreeRowProps, left string, columnWidth, width int, compa
 	available := width - leftBudget - gap
 	shortened := shortenPath(secondary, available)
 	padding := leftBudget - leftWidth + gap
-	style := styles.Secondary
 	if row.Selected {
-		style = styles.SecondarySelected
+		shortened = styles.SecondarySelected.Render(shortened)
+	} else {
+		shortened = styles.Secondary.Render(shortened)
 	}
-	return left + strings.Repeat(" ", padding) + style.Render(shortened)
+	return left + strings.Repeat(" ", padding) + shortened
 }
 
 func shortenPath(path string, maxWidth int) string {
@@ -151,35 +152,31 @@ func shortenPath(path string, maxWidth int) string {
 }
 
 func renderRowLine(row TreeRowProps, styles TreeStyles, compact bool) string {
-	jumpLabel := strings.TrimSpace(terminal.Sanitize(row.JumpLabel))
-	if jumpLabel != "" {
-		jumpLabel = styles.JumpLabel.Render(jumpLabel) + " "
-	}
-	cursor := " "
-	if row.Selected {
-		cursor = "❯"
-	}
-	marker := "  "
+	indicator := " "
 	if row.Active {
-		marker = "● "
+		indicator = "│"
 	}
-	return jumpLabel + fmt.Sprintf("%s %s%s", cursor, marker, decoratedLabel(row, styles, compact))
+	parts := []string{indicator}
+	if jumpLabel := strings.TrimSpace(terminal.Sanitize(row.JumpLabel)); jumpLabel != "" {
+		parts = append(parts, jumpLabel)
+	}
+	return strings.Join(append(parts, decoratedLabel(row, styles, compact)), " ")
 }
 
 func styleRowLine(row TreeRowProps, line string, width int, styles TreeStyles) string {
+	style := styles.Row
+	switch {
+	case row.Active:
+		style = styles.ActiveRow
+	case row.Depth == 0 && row.Branch:
+		style = styles.RootRow
+	case row.Depth > 0:
+		style = styles.ChildRow
+	}
 	if row.Selected {
-		return styles.SelectedRow.Width(width).Render(line)
+		style = styles.SelectedRow.Inherit(style).Width(width)
 	}
-	if row.Depth == 0 {
-		return styles.RootRow.Render(line)
-	}
-	if row.Active {
-		return styles.ActiveRow.Render(line)
-	}
-	if row.Depth > 0 {
-		return styles.ChildRow.Render(line)
-	}
-	return styles.Row.Render(line)
+	return style.Render(line)
 }
 
 func decoratedLabel(row TreeRowProps, styles TreeStyles, compact bool) string {
@@ -197,7 +194,10 @@ func decoratedLabel(row TreeRowProps, styles TreeStyles, compact bool) string {
 		branch = styles.Rail.Render(branch)
 	}
 	if row.Depth == 0 {
-		return fmt.Sprintf("%s %s", branch, primary)
+		if !row.Branch {
+			return primary
+		}
+		return branch + primary
 	}
 	return fmt.Sprintf("  %s%s", prefix, primary)
 }

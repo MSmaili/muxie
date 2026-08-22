@@ -91,6 +91,26 @@ func TestJumpFreezesOnlyVisibleViewportCandidatesAndEscapeRestoresState(t *testi
 	require.Equal(t, beforeOffset, m.items.Offset())
 }
 
+func TestJumpControlNavigationStaysWithinFrozenCandidates(t *testing.T) {
+	m := newModel(flatJumpSnapshot(40), nil)
+	m.width, m.height = 80, 10
+	m = browseModel(m.reflow())
+	m, _ = updateModel(t, m, printableKey(";"))
+	frozen := candidateIDs(m.jump)
+	require.Greater(t, len(frozen), 2)
+
+	m.jump.input = "a"
+	m, _ = updateModel(t, m, controlKey('n'))
+	require.Empty(t, m.jump.input)
+	require.Equal(t, frozen[1], selectedNodeID(m))
+	m, _ = updateModel(t, m, controlKey('p'))
+	require.Equal(t, frozen[0], selectedNodeID(m))
+	m, _ = updateModel(t, m, controlKey('p'))
+	require.Equal(t, frozen[0], selectedNodeID(m))
+	require.Equal(t, frozen, candidateIDs(m.jump))
+	require.Equal(t, modeJump, m.mode)
+}
+
 func TestJumpRoutesShortcutLabelsBeforeNormalActions(t *testing.T) {
 	for _, test := range []struct {
 		label string
