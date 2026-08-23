@@ -57,7 +57,7 @@ func TestViewKeepsSecondaryTextOnItsRowWithoutGlobalHelp(t *testing.T) {
 	m = m.reflow()
 	content := m.View().Content
 	lines := strings.Split(content, "\n")
-	if len(lines) < 3 || !strings.Contains(lines[1], "\uf002") || strings.Contains(lines[1], "──") || !strings.Contains(lines[2], "──") {
+	if len(lines) < 3 || !strings.Contains(terminal.Sanitize(lines[1]), "/  search destinations") || strings.Contains(lines[1], "──") || !strings.Contains(lines[2], "──") {
 		t.Fatalf("search input should be one row with only a bottom divider: %q", lines[:min(3, len(lines))])
 	}
 	if strings.Contains(content, "KEYBINDINGS") || strings.Contains(content, "WORKSPACE:") || strings.Contains(content, "? help") {

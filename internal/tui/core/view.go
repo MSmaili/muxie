@@ -19,7 +19,7 @@ func (m model) View() tea.View {
 		RenderSearchBar(SearchBarProps{
 			Width: innerW, Filter: m.items.Query(), Right: headerRight(m),
 			Active: m.mode == modeFilter, Compact: layout.compact,
-			Style: t.searchBox, PromptStyle: t.selectedHint, MetaStyle: t.meta,
+			Style: t.searchBox, PromptStyle: t.searchPrompt, PlaceholderStyle: t.searchPlaceholder, MetaStyle: t.meta,
 		}),
 		t.sectionLine.Render(strings.Repeat("─", innerW)),
 	}

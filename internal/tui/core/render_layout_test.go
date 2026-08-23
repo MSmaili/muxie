@@ -8,6 +8,32 @@ import (
 	"github.com/MSmaili/hetki/internal/terminal"
 )
 
+func TestSearchBarShowsTheSlashShortcutPrompt(t *testing.T) {
+	prompt := lipgloss.NewStyle().Foreground(lipgloss.Color("0")).Background(lipgloss.Color("2"))
+	placeholder := lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
+	query := lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
+	got := RenderSearchBar(SearchBarProps{
+		Width: 32, Right: "3/3", Style: query, PromptStyle: prompt, PlaceholderStyle: placeholder,
+	})
+	if !strings.Contains(got, prompt.Render(" / ")) {
+		t.Fatalf("search shortcut is not rendered as a box: %q", got)
+	}
+	if !strings.Contains(got, placeholder.Render(" search destinations")) {
+		t.Fatalf("search placeholder did not use its subdued style: %q", got)
+	}
+	if plain := terminal.Sanitize(got); plain != " /  search destinations      3/3" {
+		t.Fatalf("search header = %q", plain)
+	}
+
+	active := RenderSearchBar(SearchBarProps{Width: 20, Filter: "dev", Active: true, Style: query, PromptStyle: prompt, PlaceholderStyle: placeholder})
+	if !strings.Contains(active, query.Render(" dev_")) {
+		t.Fatalf("query used placeholder styling: %q", active)
+	}
+	if plain := strings.TrimRight(terminal.Sanitize(active), " "); plain != " /  dev_" {
+		t.Fatalf("active search header = %q", plain)
+	}
+}
+
 func TestHeadersAndModalsSanitizeAndFit(t *testing.T) {
 	unsafe := "中👨‍👩‍👧é\x1b]0;owned\a\nnext"
 	border := lipgloss.NewStyle().Border(lipgloss.RoundedBorder())

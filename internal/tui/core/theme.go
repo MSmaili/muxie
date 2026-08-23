@@ -7,6 +7,7 @@ var selectionBg = lipgloss.Color("60")
 type theme struct {
 	meta              lipgloss.Style
 	searchBox         lipgloss.Style
+	searchPlaceholder lipgloss.Style
 	row               lipgloss.Style
 	rootRow           lipgloss.Style
 	childRow          lipgloss.Style
@@ -14,7 +15,7 @@ type theme struct {
 	secondarySelected lipgloss.Style
 	activeRow         lipgloss.Style
 	selectedRow       lipgloss.Style
-	selectedHint      lipgloss.Style
+	searchPrompt      lipgloss.Style
 	rail              lipgloss.Style
 	sectionLine       lipgloss.Style
 	appBorder         lipgloss.Style
@@ -25,22 +26,24 @@ type theme struct {
 
 func defaultTheme() theme {
 	return theme{
-		meta:      lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
-		searchBox: lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
-		row:       lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
-		rootRow:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("224")),
-		childRow:  lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
-		secondary: lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true),
+		meta:              lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
+		searchBox:         lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
+		searchPlaceholder: lipgloss.NewStyle().Foreground(lipgloss.Color("238")),
+		row:               lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
+		rootRow:           lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("224")),
+		childRow:          lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
+		secondary:         lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true),
 		secondarySelected: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).Background(selectionBg).Italic(true),
-		activeRow:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("224")),
-		selectedRow:  lipgloss.NewStyle().Background(selectionBg),
-		selectedHint: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("181")),
-		rail:         lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-		sectionLine:  lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
-		appBorder:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("110")).Padding(0, 2),
-		modal:        lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("110")).Padding(0, 1),
-		modalTitle:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("110")),
-		modalHint:    lipgloss.NewStyle().Foreground(lipgloss.Color("246")),
+			Foreground(lipgloss.Color("252")).Background(selectionBg).Italic(true),
+		activeRow:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("224")),
+		selectedRow: lipgloss.NewStyle().Background(selectionBg),
+		searchPrompt: lipgloss.NewStyle().Bold(true).
+			Foreground(lipgloss.Color("235")).Background(lipgloss.Color("181")),
+		rail:        lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
+		sectionLine: lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
+		appBorder:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("110")).Padding(0, 2),
+		modal:       lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("110")).Padding(0, 1),
+		modalTitle:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("110")),
+		modalHint:   lipgloss.NewStyle().Foreground(lipgloss.Color("246")),
 	}
 }

@@ -8,30 +8,38 @@ import (
 )
 
 type SearchBarProps struct {
-	Width       int
-	Filter      string
-	Right       string
-	Active      bool
-	Compact     bool
-	Style       lipgloss.Style
-	PromptStyle lipgloss.Style
-	MetaStyle   lipgloss.Style
+	Width            int
+	Filter           string
+	Right            string
+	Active           bool
+	Compact          bool
+	Style            lipgloss.Style
+	PromptStyle      lipgloss.Style
+	PlaceholderStyle lipgloss.Style
+	MetaStyle        lipgloss.Style
 }
 
 func RenderSearchBar(props SearchBarProps) string {
-	search := strings.TrimSpace(terminal.Sanitize(props.Filter))
-	prompt := "\uf002 "
-	if props.Compact && search == "" && !props.Active {
-		prompt = "\uf002 search"
-	}
-	content := prompt + search
-	if props.Active {
-		content += "_"
-	} else if search == "" {
-		content = prompt
-	}
 	if props.Width <= 0 {
 		return ""
+	}
+	search := strings.TrimSpace(terminal.Sanitize(props.Filter))
+	text := " "
+	placeholder := false
+	switch {
+	case search != "":
+		text += search
+		if props.Active {
+			text += "_"
+		}
+	case props.Active:
+		text += "_"
+	case props.Compact:
+		text += "search"
+		placeholder = true
+	default:
+		text += "search destinations"
+		placeholder = true
 	}
 
 	rightText := terminal.Sanitize(props.Right)
@@ -44,10 +52,15 @@ func RenderSearchBar(props SearchBarProps) string {
 	if rightW > 0 {
 		leftW -= rightW + 1
 	}
-	content = truncateWidth(content, leftW)
-	left := props.Style.Render(content)
-	if strings.HasPrefix(content, prompt) {
-		left = props.PromptStyle.Render(prompt) + props.Style.Render(strings.TrimPrefix(content, prompt))
+	prompt := props.PromptStyle.Render(" / ")
+	left := terminal.Cut(prompt, 0, leftW)
+	if promptW := terminal.Width(prompt); leftW > promptW {
+		text = truncateWidth(text, leftW-promptW)
+		style := props.Style
+		if placeholder {
+			style = props.PlaceholderStyle
+		}
+		left = prompt + style.Render(text)
 	}
 	if rightW == 0 {
 		return left
