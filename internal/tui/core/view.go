@@ -108,37 +108,15 @@ func headerRight(m model) string {
 	if notice := m.items.Snapshot().Notice; notice != "" {
 		return notice
 	}
-	return rootCountLabel(m.items.Snapshot(), m.items.Rows())
+	return rootCountLabel(m.items.Snapshot(), m.items.ShownRoots())
 }
 
-func rootCountLabel(snapshot list.Snapshot, rows []list.Row) string {
+func rootCountLabel(snapshot list.Snapshot, shown int) string {
 	total := len(snapshot.Items)
 	if total == 0 {
 		return ""
 	}
-	shownIDs := make(map[list.ItemID]struct{}, len(rows))
-	for _, row := range rows {
-		shownIDs[row.Item.ID] = struct{}{}
-	}
-	shown := 0
-	for _, item := range snapshot.Items {
-		if containsAnyItem(item, shownIDs) {
-			shown++
-		}
-	}
 	return fmt.Sprintf("%d/%d", shown, total)
-}
-
-func containsAnyItem(item list.Item, ids map[list.ItemID]struct{}) bool {
-	if _, exists := ids[item.ID]; exists {
-		return true
-	}
-	for _, child := range item.Children {
-		if containsAnyItem(child, ids) {
-			return true
-		}
-	}
-	return false
 }
 
 func responsiveFrameStyle(base lipgloss.Style, width int) lipgloss.Style {

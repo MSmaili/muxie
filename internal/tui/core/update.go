@@ -3,9 +3,12 @@ package core
 import (
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/MSmaili/hetki/internal/tui/list"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func (m model) Init() tea.Cmd { return nil }
@@ -22,6 +25,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case actionResultMsg:
 		return m.handleActionResult(msg)
+	case tea.PasteMsg:
+		if m.busy {
+			return m, nil
+		}
+		switch m.mode {
+		case modeFilter:
+			m.items.SetQuery(m.items.Query() + singleLinePaste(msg.Content))
+			m.updateFilterStatus()
+			return m.reflow(), nil
+		case modeInput:
+			m.input.Value += singleLinePaste(msg.Content)
+		}
+		return m, nil
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
@@ -401,6 +417,20 @@ func matchJumpStatus(m model) string {
 		return statusNoMatches
 	}
 	return fmt.Sprintf("match %d/%d", current, total)
+}
+
+func singleLinePaste(content string) string {
+	content = ansi.Strip(strings.TrimRight(content, "\r\n"))
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\r' || r == '\n' || r == '\t':
+			return ' '
+		case r == utf8.RuneError || unicode.IsControl(r):
+			return -1
+		default:
+			return r
+		}
+	}, content)
 }
 
 func deleteLastWord(value string) string {

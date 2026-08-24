@@ -28,10 +28,10 @@ func TestRootCountLabelShowsFilteredRootsOverTotal(t *testing.T) {
 	}}
 	model, err := list.New(snapshot)
 	require.NoError(t, err)
-	require.Equal(t, "2/2", rootCountLabel(snapshot, model.Rows()))
+	require.Equal(t, "2/2", rootCountLabel(snapshot, model.ShownRoots()))
 
 	model.SetQuery("logs")
-	require.Equal(t, "1/2", rootCountLabel(snapshot, model.Rows()))
+	require.Equal(t, "1/2", rootCountLabel(snapshot, model.ShownRoots()))
 	model.SetQuery("missing")
-	require.Equal(t, "0/2", rootCountLabel(snapshot, model.Rows()))
+	require.Equal(t, "0/2", rootCountLabel(snapshot, model.ShownRoots()))
 }

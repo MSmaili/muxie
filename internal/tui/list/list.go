@@ -19,14 +19,15 @@ type Row struct {
 }
 
 type Model struct {
-	snapshot Snapshot
-	rows     []Row
-	cursor   int
-	offset   int
-	height   int
-	query    string
-	expanded map[ItemID]bool
-	active   map[ItemID]bool
+	snapshot  Snapshot
+	rows      []Row
+	cursor    int
+	offset    int
+	height    int
+	shownRoot int
+	query     string
+	expanded  map[ItemID]bool
+	active    map[ItemID]bool
 }
 
 func New(snapshot Snapshot) (Model, error) {
@@ -47,6 +48,8 @@ func (m Model) Offset() int             { return m.offset }
 func (m Model) Height() int             { return m.height }
 func (m Model) Query() string           { return m.query }
 func (m Model) IsActive(id ItemID) bool { return m.active[id] }
+
+func (m Model) ShownRoots() int { return m.shownRoot }
 
 func (m Model) Selected() (Row, bool) {
 	if m.cursor < 0 || m.cursor >= len(m.rows) {
@@ -212,12 +215,18 @@ func (m *Model) applyFilter() {
 		} else {
 			m.cursor = clampCursor(m.cursor, len(m.rows))
 		}
-		return
+	} else {
+		m.rows = rankedMatches(m.snapshot.Items, query)
+		m.cursor = bestMatchCursor(m.rows)
+		if idx := findRow(m.rows, selectedID); idx >= 0 && m.rows[idx].Score > 0 {
+			m.cursor = idx
+		}
 	}
-	m.rows = rankedMatches(m.snapshot.Items, query)
-	m.cursor = bestMatchCursor(m.rows)
-	if idx := findRow(m.rows, selectedID); idx >= 0 && m.rows[idx].Score > 0 {
-		m.cursor = idx
+	m.shownRoot = 0
+	for _, row := range m.rows {
+		if row.Depth == 0 {
+			m.shownRoot++
+		}
 	}
 }
 

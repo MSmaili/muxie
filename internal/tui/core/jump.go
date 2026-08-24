@@ -11,6 +11,7 @@ type jumpCandidate struct {
 
 type jumpState struct {
 	candidates []jumpCandidate
+	labels     map[list.ItemID]string
 	input      string
 }
 
@@ -19,7 +20,12 @@ func newJumpState(rows []list.Row) jumpState {
 	for i, row := range rows {
 		ids[i] = row.Item.ID
 	}
-	return jumpState{candidates: assignJumpLabels(ids)}
+	candidates := assignJumpLabels(ids)
+	labels := make(map[list.ItemID]string, len(candidates))
+	for _, candidate := range candidates {
+		labels[candidate.itemID] = candidate.label
+	}
+	return jumpState{candidates: candidates, labels: labels}
 }
 
 func assignJumpLabels(ids []list.ItemID) []jumpCandidate {
@@ -46,12 +52,7 @@ func assignJumpLabels(ids []list.ItemID) []jumpCandidate {
 }
 
 func (j jumpState) labelFor(id list.ItemID) string {
-	for _, candidate := range j.candidates {
-		if candidate.itemID == id {
-			return candidate.label
-		}
-	}
-	return ""
+	return j.labels[id]
 }
 
 func (j jumpState) neighbor(id list.ItemID, delta int) (list.ItemID, bool) {

@@ -225,3 +225,17 @@ func TestInvalidRefreshRetainsSnapshotAndSelection(t *testing.T) {
 	require.Equal(t, before, m.items.Snapshot())
 	require.Equal(t, list.ItemID("window-2"), selectedNodeID(m))
 }
+
+func TestPasteMsgFeedsFilterAndInputModes(t *testing.T) {
+	m := newModel(interactionSnapshot(), nil)
+
+	m.mode = modeFilter
+	next, _ := m.Update(tea.PasteMsg{Content: "edi\n"})
+	require.Equal(t, "edi", next.(model).items.Query())
+
+	prompt := next.(model)
+	prompt.mode = modeInput
+	prompt.input = inputState{Value: "pre"}
+	next, _ = prompt.Update(tea.PasteMsg{Content: "-pasted\nline\t\x1b[31mred\x1b[0m\x00\r\n"})
+	require.Equal(t, "pre-pasted line red", next.(model).input.Value)
+}
