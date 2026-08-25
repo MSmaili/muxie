@@ -50,7 +50,7 @@ func projectFlatRanked(result backend.StateResult, homeDir string, scores frecen
 				}
 				fields = appendPathSearchFields(fields, group.path, homeDir)
 				snapshot.Items = append(snapshot.Items, list.Item{
-					ID: id, Primary: session.Name + " > " + name, Secondary: displayPath(group.path, homeDir), SearchFields: fields,
+					ID: id, Primary: session.Name + "" + name, Secondary: displayPath(group.path, homeDir), SearchFields: fields,
 				})
 				mutationTarget := session.ID + ":" + window.ID
 				index[id] = liveItem{
