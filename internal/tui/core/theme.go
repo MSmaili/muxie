@@ -16,6 +16,7 @@ type theme struct {
 	activeRow         lipgloss.Style
 	selectedRow       lipgloss.Style
 	searchPrompt      lipgloss.Style
+	jumpLabel         lipgloss.Style
 	rail              lipgloss.Style
 	sectionLine       lipgloss.Style
 	appBorder         lipgloss.Style
@@ -39,6 +40,7 @@ func defaultTheme() theme {
 		selectedRow: lipgloss.NewStyle().Background(selectionBg),
 		searchPrompt: lipgloss.NewStyle().Bold(true).
 			Foreground(lipgloss.Color("235")).Background(lipgloss.Color("181")),
+		jumpLabel:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("110")),
 		rail:        lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
 		sectionLine: lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
 		appBorder:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("110")).Padding(0, 2),

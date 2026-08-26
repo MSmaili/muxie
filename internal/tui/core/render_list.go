@@ -17,6 +17,7 @@ type TreeStyles struct {
 	SecondarySelected lipgloss.Style
 	ActiveRow         lipgloss.Style
 	SelectedRow       lipgloss.Style
+	JumpLabel         lipgloss.Style
 	Rail              lipgloss.Style
 }
 
@@ -157,7 +158,7 @@ func renderRowLine(row TreeRowProps, styles TreeStyles, compact bool) string {
 		indicator = "│"
 	}
 	parts := []string{indicator}
-	if jumpLabel := strings.TrimSpace(terminal.Sanitize(row.JumpLabel)); jumpLabel != "" {
+	if jumpLabel := displayJumpLabel(row.JumpLabel); jumpLabel != "" {
 		parts = append(parts, jumpLabel)
 	}
 	return strings.Join(append(parts, decoratedLabel(row, styles, compact)), " ")
@@ -174,9 +175,26 @@ func styleRowLine(row TreeRowProps, line string, width int, styles TreeStyles) s
 		style = styles.ChildRow
 	}
 	if row.Selected {
-		style = styles.SelectedRow.Inherit(style).Width(width)
+		return styles.SelectedRow.Inherit(style).Width(width).Render(line)
 	}
-	return style.Render(line)
+	rendered := style.Render(line)
+	jumpLabel := displayJumpLabel(row.JumpLabel)
+	if jumpLabel == "" || width <= 2 {
+		return rendered
+	}
+	badge := terminal.Cut(styles.JumpLabel.Render(jumpLabel), 0, width-2)
+	return lipgloss.NewCompositor(
+		lipgloss.NewLayer(rendered),
+		lipgloss.NewLayer(badge).X(2).Z(1),
+	).Render()
+}
+
+func displayJumpLabel(label string) string {
+	label = strings.TrimSpace(terminal.Sanitize(label))
+	if label == "" {
+		return ""
+	}
+	return "‹" + label + "›"
 }
 
 func decoratedLabel(row TreeRowProps, styles TreeStyles, compact bool) string {
