@@ -757,7 +757,7 @@ show_post_install_info() {
     printf '\nGet started:\n'
     printf '  hetki start <workspace>    # Start a workspace\n'
     printf '  hetki save -n <name>       # Save the current session to a named workspace\n'
-    printf '  hetki list sessions        # List sessions\n'
+    printf '  hetki                      # Browse sessions\n'
     printf '\nFor more info: hetki --help\n'
 }
 

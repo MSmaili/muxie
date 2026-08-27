@@ -14,7 +14,8 @@ func TestParseTargetPreservesIDsAndLeadingPunctuation(t *testing.T) {
 	for raw, want := range map[string]string{
 		"$1:@2":           "$1:@2",
 		"!production":     "!production",
-		"● core:editor:0": "core:editor.0",
+		"● core":          "● core",
+		"● core:editor:0": "● core:editor.0",
 	} {
 		require.Equal(t, want, parseTarget(raw))
 	}

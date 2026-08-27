@@ -95,13 +95,15 @@ func TestBareHetkiPreservesContextAndTUIError(t *testing.T) {
 	require.EqualError(t, runBareHetki(command, nil), "tui failed after restore")
 }
 
-func TestRootRejectsArgumentsAndRemovedTUICommand(t *testing.T) {
+func TestRootRejectsArgumentsAndRemovedCommands(t *testing.T) {
 	require.Error(t, rootCmd.Args(rootCmd, []string{"unexpected"}))
-
-	rootCmd.SetArgs([]string{"tui"})
 	t.Cleanup(func() { rootCmd.SetArgs(nil) })
-	_, err := rootCmd.ExecuteC()
-	require.ErrorContains(t, err, `unknown command "tui"`)
+
+	for _, removed := range []string{"tui", "list"} {
+		rootCmd.SetArgs([]string{removed})
+		_, err := rootCmd.ExecuteC()
+		require.ErrorContains(t, err, `unknown command "`+removed+`"`)
+	}
 }
 
 func TestCommandSignalContextCancelsOnTerminationSignals(t *testing.T) {

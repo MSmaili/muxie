@@ -46,7 +46,7 @@ func (l *FileLoader) Load() (*Workspace, error) {
 
 // Parse is the single manifest pipeline: bounded read → strict decode →
 // validate with field paths → normalize (first-pane compilation, root/path
-// inheritance). Every consumer (start, list, save verification, TUI) goes
+// inheritance). Every workspace consumer (start and save verification) goes
 // through here.
 func Parse(data []byte, path string) (*Workspace, error) {
 	if len(data) > MaxManifestBytes {

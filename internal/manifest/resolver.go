@@ -106,7 +106,7 @@ func (r *Resolver) findNamedWorkspace(name string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("named workspace not found: %s\nHint: List available workspaces with 'hetki list' or create one with 'hetki save -n %s'", name, name)
+	return "", fmt.Errorf("named workspace not found: %s\nHint: Check the workspace name or create it with 'hetki save -n %s'", name, name)
 }
 
 func (r *Resolver) findLocalWorkspace() (string, error) {

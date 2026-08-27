@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/spf13/cobra"
 )
@@ -21,7 +20,7 @@ The target can be passed as an argument or piped from stdin:
 	  hetki switch dev
 	  hetki switch dev:editor
 	  hetki switch dev:editor:0
-	  hetki list sessions -w | fzf | hetki switch`,
+	  printf 'dev:editor\n' | hetki switch`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runSwitch,
 }
@@ -99,26 +98,10 @@ func readStdinLine(ctx context.Context) (string, error) {
 }
 
 func parseTarget(raw string) string {
-	s := strings.TrimSpace(raw)
-	s = stripMarkerPrefix(s)
-	s = listToTmuxFormat(s)
-	return s
-}
-
-func stripMarkerPrefix(s string) string {
-	space := strings.IndexFunc(s, unicode.IsSpace)
-	if space > 0 && strings.IndexFunc(s[:space], func(r rune) bool {
-		return r == '$' || unicode.IsLetter(r) || unicode.IsDigit(r)
-	}) == -1 {
-		return strings.TrimSpace(s[space:])
-	}
-	return strings.TrimSpace(s)
-}
-
-func listToTmuxFormat(s string) string {
-	parts := strings.Split(s, ":")
+	target := strings.TrimSpace(raw)
+	parts := strings.Split(target, ":")
 	if len(parts) == 3 {
 		return parts[0] + ":" + parts[1] + "." + parts[2]
 	}
-	return s
+	return target
 }

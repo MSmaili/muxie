@@ -3,7 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"io"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,6 +13,14 @@ import (
 	"github.com/fatih/color"
 	"github.com/stretchr/testify/require"
 )
+
+func TestLoggerSanitizesExternalArgumentsBeforeStyling(t *testing.T) {
+	output := captureLoggerOutput(t, func() {
+		logger.Plain("error: %v", errors.New("failure"))
+		logger.Plain("name: %s", "dev\x1b[31m-red\x1b[0m\nnext")
+	})
+	require.Equal(t, "error: failure\nname: dev-red\\nnext\n", output)
+}
 
 type stubBackend struct {
 	queryResult backend.StateResult
@@ -61,18 +69,10 @@ func (s *stubBackend) Switch(_ context.Context, target string) error {
 }
 
 func resetCommandGlobals() {
-	listCmd.SetContext(context.Background())
 	saveCmd.SetContext(context.Background())
 	startCmd.SetContext(context.Background())
 	dryRun = false
 	force = false
-	listSessions = false
-	listWindows = false
-	listPanes = false
-	listFormat = "flat"
-	listDelimiter = ":"
-	listCurrent = false
-	listMarker = ""
 	savePath = ""
 	saveName = ""
 	saveAll = false
@@ -87,23 +87,6 @@ func withStubBackend(t *testing.T, stub backend.Backend) {
 	t.Cleanup(func() {
 		detectBackend = previous
 	})
-}
-
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	previous := os.Stdout
-	r, w, err := os.Pipe()
-	require.NoError(t, err)
-	os.Stdout = w
-
-	fn()
-	require.NoError(t, w.Close())
-	os.Stdout = previous
-
-	data, err := io.ReadAll(r)
-	require.NoError(t, err)
-	require.NoError(t, r.Close())
-	return string(data)
 }
 
 func captureLoggerOutput(t *testing.T, fn func()) string {
