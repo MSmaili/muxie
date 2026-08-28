@@ -103,62 +103,91 @@ func (a *LiveAdapter) Execute(ctx context.Context, request core.ActionRequest) (
 }
 
 func liveItemExists(state backend.StateResult, item liveItem) bool {
-	for _, session := range state.Sessions {
-		if session.ID != item.SessionTarget {
-			continue
-		}
-		if item.Kind == liveSession {
-			return item.Target == session.ID
-		}
-		for _, window := range session.Windows {
-			windowTarget := session.ID + ":" + window.ID
-			if item.Kind == liveWindow && item.Target == windowTarget {
-				return true
-			}
-			if item.Kind != liveDestination || item.MutationTarget != windowTarget {
-				continue
-			}
-			for _, pane := range window.Panes {
-				if pane.ID == item.Target && pane.Path == item.RawPath {
-					return true
-				}
-			}
-		}
+	session, found := findSession(state.Sessions, item.SessionTarget)
+	if !found {
 		return false
+	}
+	if item.Kind == liveSession {
+		return item.Target == session.ID
+	}
+
+	if item.Kind == liveWindow {
+		_, found := findWindow(session, item.Target)
+		return found
+	}
+	if item.Kind != liveDestination {
+		return false
+	}
+
+	window, found := findWindow(session, item.MutationTarget)
+	if !found {
+		return false
+	}
+	for _, pane := range window.Panes {
+		if pane.ID == item.Target && pane.Path == item.RawPath {
+			return true
+		}
 	}
 	return false
 }
 
 func navigationRecordForItem(state backend.StateResult, item liveItem) (navigationRecord, bool) {
-	for _, session := range state.Sessions {
-		if session.ID != item.SessionTarget {
-			continue
-		}
-		if item.Kind == liveSession {
-			for _, window := range session.Windows {
-				if !window.Active {
-					continue
-				}
-				if pane, ok := activePane(window.Panes); ok && pane.Path != "" {
-					return navigationRecord{target: item.Target, path: pane.Path, session: session.Name}, true
-				}
-			}
+	session, found := findSession(state.Sessions, item.SessionTarget)
+	if !found {
+		return navigationRecord{}, false
+	}
+
+	if item.Kind == liveSession {
+		pane, found := activeWindowPane(session.Windows)
+		if !found {
 			return navigationRecord{}, false
 		}
-		for _, window := range session.Windows {
-			if item.MutationTarget != session.ID+":"+window.ID {
-				continue
-			}
-			if item.Kind == liveDestination {
-				return navigationRecord{target: item.Target, path: item.RawPath, session: session.Name}, item.RawPath != ""
-			}
-			if pane, ok := activePane(window.Panes); ok && pane.Path != "" {
-				return navigationRecord{target: item.Target, path: pane.Path, session: session.Name}, true
-			}
-			return navigationRecord{}, false
+		return navigationRecord{target: item.Target, path: pane.Path, session: session.Name}, true
+	}
+
+	window, found := findWindow(session, item.MutationTarget)
+	if !found {
+		return navigationRecord{}, false
+	}
+	if item.Kind == liveDestination {
+		record := navigationRecord{target: item.Target, path: item.RawPath, session: session.Name}
+		return record, item.RawPath != ""
+	}
+	pane, found := activePane(window.Panes)
+	if !found || pane.Path == "" {
+		return navigationRecord{}, false
+	}
+	return navigationRecord{target: item.Target, path: pane.Path, session: session.Name}, true
+}
+
+func findSession(sessions []backend.Session, target string) (backend.Session, bool) {
+	for _, session := range sessions {
+		if session.ID == target {
+			return session, true
 		}
 	}
-	return navigationRecord{}, false
+	return backend.Session{}, false
+}
+
+func findWindow(session backend.Session, target string) (backend.Window, bool) {
+	for _, window := range session.Windows {
+		if session.ID+":"+window.ID == target {
+			return window, true
+		}
+	}
+	return backend.Window{}, false
+}
+
+func activeWindowPane(windows []backend.Window) (backend.Pane, bool) {
+	for _, window := range windows {
+		if !window.Active {
+			continue
+		}
+		if pane, found := activePane(window.Panes); found && pane.Path != "" {
+			return pane, true
+		}
+	}
+	return backend.Pane{}, false
 }
 
 func activePane(panes []backend.Pane) (backend.Pane, bool) {
@@ -441,37 +470,48 @@ func (a *LiveAdapter) toggleProjection(ctx context.Context, selectedID list.Item
 	return core.ActionResult{Message: message, Snapshot: &snapshot, SelectItemID: preferred}, nil
 }
 
-func preferredProjectionItem(selected liveItem, projection projectionKind, snapshot list.Snapshot, index itemIndex) list.ItemID {
+func preferredProjectionItem(
+	selected liveItem,
+	projection projectionKind,
+	snapshot list.Snapshot,
+	index itemIndex,
+) list.ItemID {
 	if projection == projectionTree {
-		if selected.WindowID != "" {
-			if _, exists := index[selected.WindowID]; exists {
-				return selected.WindowID
-			}
-		}
-		if selected.SessionID != "" {
-			if _, exists := index[selected.SessionID]; exists {
-				return selected.SessionID
-			}
-		}
-		if snapshot.ActiveItemID != "" {
-			return snapshot.ActiveItemID
-		}
-		return firstMatchingItem(snapshot, index, func(liveItem) bool { return true })
+		return preferredTreeItem(selected, snapshot, index)
 	}
+	return preferredFlatItem(selected, snapshot, index)
+}
 
-	if selected.WindowID != "" {
-		if id := firstMatchingItem(snapshot, index, func(item liveItem) bool {
-			return item.WindowID == selected.WindowID && item.PaneActive
-		}); id != "" {
-			return id
-		}
-	} else if selected.SessionID != "" {
-		if id := firstMatchingItem(snapshot, index, func(item liveItem) bool {
-			return item.SessionID == selected.SessionID && item.WindowActive && item.PaneActive
-		}); id != "" {
-			return id
-		}
+func preferredTreeItem(selected liveItem, snapshot list.Snapshot, index itemIndex) list.ItemID {
+	_, windowExists := index[selected.WindowID]
+	if selected.WindowID != "" && windowExists {
+		return selected.WindowID
 	}
+	_, sessionExists := index[selected.SessionID]
+	if selected.SessionID != "" && sessionExists {
+		return selected.SessionID
+	}
+	return projectionFallback(snapshot, index)
+}
+
+func preferredFlatItem(selected liveItem, snapshot list.Snapshot, index itemIndex) list.ItemID {
+	var preferred list.ItemID
+	if selected.WindowID != "" {
+		preferred = firstMatchingItem(snapshot, index, func(item liveItem) bool {
+			return item.WindowID == selected.WindowID && item.PaneActive
+		})
+	} else if selected.SessionID != "" {
+		preferred = firstMatchingItem(snapshot, index, func(item liveItem) bool {
+			return item.SessionID == selected.SessionID && item.WindowActive && item.PaneActive
+		})
+	}
+	if preferred != "" {
+		return preferred
+	}
+	return projectionFallback(snapshot, index)
+}
+
+func projectionFallback(snapshot list.Snapshot, index itemIndex) list.ItemID {
 	if snapshot.ActiveItemID != "" {
 		return snapshot.ActiveItemID
 	}

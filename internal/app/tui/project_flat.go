@@ -20,53 +20,24 @@ func projectFlat(result backend.StateResult, homeDir string) (list.Snapshot, ite
 	return projectFlatRanked(result, homeDir, frecency.Scores{})
 }
 
-func projectFlatRanked(result backend.StateResult, homeDir string, scores frecency.Scores) (list.Snapshot, itemIndex, error) {
+func projectFlatRanked(
+	result backend.StateResult,
+	homeDir string,
+	scores frecency.Scores,
+) (list.Snapshot, itemIndex, error) {
 	snapshot := list.Snapshot{}
 	index := make(itemIndex)
+
 	for _, session := range result.Sessions {
-		if err := validateStableTmuxID(session.ID, '$', "session"); err != nil {
+		if err := appendFlatSession(&snapshot, index, session, result.Active.PaneID, homeDir); err != nil {
 			return list.Snapshot{}, nil, err
 		}
-		sessionID := list.ItemID("session:" + session.ID)
-		for _, window := range session.Windows {
-			if err := validateStableTmuxID(window.ID, '@', "window"); err != nil {
-				return list.Snapshot{}, nil, err
-			}
-			windowID := list.ItemID("window:" + window.ID)
-			groups := groupPanesByPath(window.Panes)
-			for _, group := range groups {
-				pane := destinationPane(group.panes)
-				if err := validateStableTmuxID(pane.ID, '%', "pane"); err != nil {
-					return list.Snapshot{}, nil, err
-				}
-				name := window.Name
-				if name == "" {
-					name = fmt.Sprintf("%d", window.Index)
-				}
-				id := destinationItemID(session.ID, window.ID, group.path)
-				fields := []list.SearchField{
-					{Tier: list.SearchPrimary, Text: session.Name},
-					{Tier: list.SearchPrimary, Text: name},
-				}
-				fields = appendPathSearchFields(fields, group.path, homeDir)
-				snapshot.Items = append(snapshot.Items, list.Item{
-					ID: id, Primary: session.Name + "" + name, Secondary: displayPath(group.path, homeDir), SearchFields: fields,
-				})
-				mutationTarget := session.ID + ":" + window.ID
-				index[id] = liveItem{
-					ID: id, SessionID: sessionID, WindowID: windowID, Kind: liveDestination,
-					Label: name, Name: window.Name, SessionName: session.Name, WindowName: window.Name,
-					Target: pane.ID, MutationTarget: mutationTarget, SessionTarget: session.ID, RawPath: group.path,
-					WindowIndex: window.Index, WindowActive: window.Active, PaneActive: pane.Active,
-				}
-				if pane.ID == result.Active.PaneID {
-					snapshot.ActiveItemID = id
-				}
-			}
-		}
 	}
+
 	sort.Slice(snapshot.Items, func(i, j int) bool {
-		return destinationLess(index[snapshot.Items[i].ID], index[snapshot.Items[j].ID], scores)
+		left := index[snapshot.Items[i].ID]
+		right := index[snapshot.Items[j].ID]
+		return destinationLess(left, right, scores)
 	})
 	if err := validateProjection(snapshot, index); err != nil {
 		return list.Snapshot{}, nil, err
@@ -74,11 +45,107 @@ func projectFlatRanked(result backend.StateResult, homeDir string, scores frecen
 	return snapshot, index, nil
 }
 
+func appendFlatSession(
+	snapshot *list.Snapshot,
+	index itemIndex,
+	session backend.Session,
+	activePaneID string,
+	homeDir string,
+) error {
+	if err := validateStableTmuxID(session.ID, '$', "session"); err != nil {
+		return err
+	}
+	for _, window := range session.Windows {
+		if err := appendFlatWindow(snapshot, index, session, window, activePaneID, homeDir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func appendFlatWindow(
+	snapshot *list.Snapshot,
+	index itemIndex,
+	session backend.Session,
+	window backend.Window,
+	activePaneID string,
+	homeDir string,
+) error {
+	if err := validateStableTmuxID(window.ID, '@', "window"); err != nil {
+		return err
+	}
+	for _, group := range groupPanesByPath(window.Panes) {
+		item, destination, err := projectFlatDestination(session, window, group, homeDir)
+		if err != nil {
+			return err
+		}
+		snapshot.Items = append(snapshot.Items, item)
+		index[item.ID] = destination
+		if destination.Target == activePaneID {
+			snapshot.ActiveItemID = item.ID
+		}
+	}
+	return nil
+}
+
+func projectFlatDestination(
+	session backend.Session,
+	window backend.Window,
+	group pathGroup,
+	homeDir string,
+) (list.Item, liveItem, error) {
+	pane := destinationPane(group.panes)
+	if err := validateStableTmuxID(pane.ID, '%', "pane"); err != nil {
+		return list.Item{}, liveItem{}, err
+	}
+
+	name := window.Name
+	if name == "" {
+		name = fmt.Sprintf("%d", window.Index)
+	}
+	id := destinationItemID(session.ID, window.ID, group.path)
+	fields := []list.SearchField{
+		{Tier: list.SearchPrimary, Text: session.Name},
+		{Tier: list.SearchPrimary, Text: name},
+	}
+	fields = appendPathSearchFields(fields, group.path, homeDir)
+
+	item := list.Item{
+		ID:           id,
+		Primary:      session.Name + "" + name,
+		Secondary:    displayPath(group.path, homeDir),
+		SearchFields: fields,
+	}
+	destination := liveItem{
+		ID:             id,
+		SessionID:      list.ItemID("session:" + session.ID),
+		WindowID:       list.ItemID("window:" + window.ID),
+		Kind:           liveDestination,
+		Label:          name,
+		Name:           window.Name,
+		SessionName:    session.Name,
+		WindowName:     window.Name,
+		Target:         pane.ID,
+		MutationTarget: session.ID + ":" + window.ID,
+		SessionTarget:  session.ID,
+		RawPath:        group.path,
+		WindowIndex:    window.Index,
+		WindowActive:   window.Active,
+		PaneActive:     pane.Active,
+	}
+	return item, destination, nil
+}
+
 func destinationLess(left, right liveItem, scores frecency.Scores) bool {
-	if leftScore, rightScore := scores.Path(left.RawPath), scores.Path(right.RawPath); leftScore != rightScore {
+	leftScore := scores.Path(left.RawPath)
+	rightScore := scores.Path(right.RawPath)
+	if leftScore != rightScore {
 		return leftScore > rightScore
 	}
-	if leftScore, rightScore := scores.Record(left.RawPath, left.SessionName), scores.Record(right.RawPath, right.SessionName); leftScore != rightScore {
+
+	leftScore = scores.Record(left.RawPath, left.SessionName)
+	rightScore = scores.Record(right.RawPath, right.SessionName)
+	if leftScore != rightScore {
 		return leftScore > rightScore
 	}
 	if left.SessionName != right.SessionName {
