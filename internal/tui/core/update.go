@@ -198,11 +198,7 @@ func (m model) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case m.keys.Matches(KeyModeNormal, ActionRefresh, msg):
 		return m.startRequest(ActionRequest{ActionID: ActionRefresh}, statusRefreshing)
 	case m.keys.Matches(KeyModeNormal, ActionToggleProjection, msg):
-		var itemID list.ItemID
-		if selected, ok := m.selectedRow(); ok {
-			itemID = selected.Item.ID
-		}
-		return m.startRequest(ActionRequest{ActionID: ActionToggleProjection, ItemID: itemID}, statusRunningAction)
+		return m.startProjectionToggle()
 	case m.keys.Matches(KeyModeNormal, ActionOpen, msg):
 		return m.startSelectedRequest(ActionOpen)
 	}
@@ -225,6 +221,8 @@ func (m model) updateJumpMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeFilter
 		m.status = statusFilterHint
 		return m, nil
+	case m.keys.Matches(KeyModeJump, ActionToggleProjection, msg):
+		return m.startProjectionToggle()
 	}
 	if msg.Text == "" {
 		return m, nil
@@ -375,6 +373,14 @@ func (m model) updateConfirmMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.startRequest(request, status)
 	}
 	return m, nil
+}
+
+func (m model) startProjectionToggle() (tea.Model, tea.Cmd) {
+	var itemID list.ItemID
+	if selected, ok := m.selectedRow(); ok {
+		itemID = selected.Item.ID
+	}
+	return m.startRequest(ActionRequest{ActionID: ActionToggleProjection, ItemID: itemID}, statusRunningAction)
 }
 
 func (m model) startSelectedRequest(action ActionID) (tea.Model, tea.Cmd) {
