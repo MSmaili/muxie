@@ -96,6 +96,20 @@ func TestPrimarySearchTierOutranksSecondaryWithoutReorderingRows(t *testing.T) {
 	require.Greater(t, m.Rows()[0].Score, m.Rows()[1].Score, "primary matches must outrank secondary matches")
 }
 
+func TestFilteringSelectsTheBestMatchInsteadOfKeepingAWeakerFlatMatch(t *testing.T) {
+	m, err := New(Snapshot{Items: []Item{
+		item("path-match", "shell", "~/work/app"),
+		item("name-match", "app", "~/other"),
+	}})
+	require.NoError(t, err)
+	require.True(t, m.Select("path-match"))
+
+	m.SetQuery("app")
+
+	require.Equal(t, []ItemID{"name-match", "path-match"}, rowIDs(m.Rows()))
+	require.Equal(t, ItemID("name-match"), selectedID(m))
+}
+
 func TestNestedFilteringRanksPrimaryTierBeforeSecondaryAndKeepsAncestors(t *testing.T) {
 	secondary := item("secondary-root", "first", "")
 	secondary.Children = []Item{item("secondary", "shell", "~/svc/api")}

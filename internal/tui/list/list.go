@@ -218,9 +218,6 @@ func (m *Model) applyFilter() {
 	} else {
 		m.rows = rankedMatches(m.snapshot.Items, query)
 		m.cursor = bestMatchCursor(m.rows)
-		if idx := findRow(m.rows, selectedID); idx >= 0 && m.rows[idx].Score > 0 {
-			m.cursor = idx
-		}
 	}
 	m.shownRoot = 0
 	for _, row := range m.rows {
