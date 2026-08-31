@@ -16,6 +16,7 @@ const (
 	KeyModeFilter  KeyMode = "filter"
 	KeyModeInput   KeyMode = "input"
 	KeyModeConfirm KeyMode = "confirm"
+	KeyModeMenu    KeyMode = "menu"
 )
 
 type Binding struct {
@@ -76,6 +77,7 @@ func DefaultKeyMap() KeyMap {
 			{Action: ActionNextMatch, Keys: []string{"n"}},
 			{Action: ActionPrevMatch, Keys: []string{"N"}},
 			{Action: ActionClearFilter, Keys: []string{"ctrl+l"}},
+			{Action: ActionContextMenu, Keys: []string{"ctrl+k"}},
 			{Action: ActionCreateSession, Keys: []string{"s"}},
 			{Action: ActionCreateWindow, Keys: []string{"a"}},
 			{Action: ActionRename, Keys: []string{"r"}},
@@ -106,6 +108,7 @@ func DefaultKeyMap() KeyMap {
 			{Action: ActionDeleteWord, Keys: []string{"ctrl+w"}},
 			{Action: ActionDeleteToStart, Keys: []string{"ctrl+u"}},
 			{Action: ActionClearFilter, Keys: []string{"ctrl+l"}},
+			{Action: ActionContextMenu, Keys: []string{"ctrl+k"}},
 		},
 		KeyModeInput: {
 			{Action: ActionCancel, Keys: []string{"esc"}},
@@ -117,6 +120,12 @@ func DefaultKeyMap() KeyMap {
 		KeyModeConfirm: {
 			{Action: ActionCancel, Keys: []string{"esc", "n", "N"}},
 			{Action: ActionConfirm, Keys: []string{"enter", "ctrl+y", "y", "Y"}},
+		},
+		KeyModeMenu: {
+			{Action: ActionCancel, Keys: []string{"esc"}},
+			{Action: ActionConfirm, Keys: []string{"enter", "ctrl+y"}},
+			{Action: ActionMoveUp, Keys: []string{"up", "k", "ctrl+p"}},
+			{Action: ActionMoveDown, Keys: []string{"down", "j", "ctrl+n"}},
 		},
 	})
 	if err != nil {

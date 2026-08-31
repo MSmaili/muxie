@@ -17,9 +17,10 @@ func renderBox(lines []string, lineWidth, maxContentWidth int, style lipgloss.St
 		}
 		return strings.Join(lines, "\n")
 	}
-	contentWidth := min(maxContentWidth, lineWidth-frameWidth)
+	boxWidth := min(maxContentWidth+frameWidth, lineWidth)
+	contentWidth := boxWidth - frameWidth
 	for i := range lines {
 		lines[i] = truncateWidth(lines[i], contentWidth)
 	}
-	return style.Width(contentWidth).Render(strings.Join(lines, "\n"))
+	return style.Width(boxWidth).Render(strings.Join(lines, "\n"))
 }

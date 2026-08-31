@@ -45,6 +45,7 @@ const (
 	modeFilter  uiMode = "filter"
 	modeInput   uiMode = "input"
 	modeConfirm uiMode = "confirm"
+	modeMenu    uiMode = "menu"
 )
 
 type inputState struct {
@@ -53,6 +54,7 @@ type inputState struct {
 	Request      ActionRequest
 	Value        string
 	SubmitStatus string
+	ReturnMode   uiMode
 }
 
 type confirmState struct {
@@ -60,6 +62,15 @@ type confirmState struct {
 	Body         string
 	Request      ActionRequest
 	SubmitStatus string
+	ReturnMode   uiMode
+}
+
+type menuState struct {
+	Title      string
+	ItemID     list.ItemID
+	Entries    []MenuEntry
+	Cursor     int
+	ReturnMode uiMode
 }
 
 type model struct {
@@ -70,9 +81,11 @@ type model struct {
 	busy        bool
 	input       inputState
 	confirm     confirmState
+	menu        menuState
 	jump        jumpState
 	initialJump bool
 	pending     *ActionRequest
+	pendingRows []list.ItemID
 	navigation  BackendTarget
 
 	width  int

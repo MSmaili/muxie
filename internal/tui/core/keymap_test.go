@@ -45,6 +45,16 @@ func TestDefaultJumpBindingsKeepControlNavigationOutOfTheLabelAlphabet(t *testin
 	require.Equal(t, []string{"ctrl+n"}, keys.Keys(KeyModeJump, ActionMoveDown))
 }
 
+func TestDefaultContextMenuBindingsAreScopedToNormalAndFilter(t *testing.T) {
+	keys := DefaultKeyMap()
+	require.Equal(t, []string{"ctrl+k"}, keys.Keys(KeyModeNormal, ActionContextMenu))
+	require.Equal(t, []string{"ctrl+k"}, keys.Keys(KeyModeFilter, ActionContextMenu))
+	require.Empty(t, keys.Keys(KeyModeJump, ActionContextMenu))
+	require.Empty(t, keys.Keys(KeyModeInput, ActionContextMenu))
+	require.Empty(t, keys.Keys(KeyModeConfirm, ActionContextMenu))
+	require.Empty(t, keys.Keys(KeyModeMenu, ActionContextMenu))
+}
+
 func TestDefaultConfirmationBindingsPreserveUppercaseChoices(t *testing.T) {
 	keys := DefaultKeyMap()
 	require.Contains(t, keys.Keys(KeyModeConfirm, ActionConfirm), "Y")
@@ -58,6 +68,17 @@ func TestModalControlsUseTheResolvedBindings(t *testing.T) {
 	}})
 	require.NoError(t, err)
 	require.Equal(t, "z submit | x cancel", modalControls(keys, KeyModeInput, "submit"))
+}
+
+func TestMenuControlsUseTheResolvedBindings(t *testing.T) {
+	keys, err := ResolveKeyMap(map[KeyMode][]Binding{KeyModeMenu: {
+		{Action: ActionMoveUp, Keys: []string{"w"}},
+		{Action: ActionMoveDown, Keys: []string{"s"}},
+		{Action: ActionConfirm, Keys: []string{"d"}},
+		{Action: ActionCancel, Keys: []string{"a"}},
+	}})
+	require.NoError(t, err)
+	require.Equal(t, "w/s move | d select | a cancel", menuControls(keys))
 }
 
 func TestResolveKeyMapAllowsTheSameKeyInDifferentModes(t *testing.T) {

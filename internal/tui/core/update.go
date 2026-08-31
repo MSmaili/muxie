@@ -55,6 +55,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateInputMode(msg)
 		case modeConfirm:
 			return m.updateConfirmMode(msg)
+		case modeMenu:
+			return m.updateMenuMode(msg)
 		default:
 			return m.updateBrowseMode(msg)
 		}
@@ -63,6 +65,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleActionResult(msg actionResultMsg) (tea.Model, tea.Cmd) {
+	previousRows := m.pendingRows
+	m.pendingRows = nil
 	if msg.result.Snapshot != nil && m.mode == modeJump {
 		m.cancelJump()
 	}
@@ -78,17 +82,42 @@ func (m model) handleActionResult(msg actionResultMsg) (tea.Model, tea.Cmd) {
 	if msg.result.Message != "" {
 		m.status = msg.result.Message
 	}
+	if msg.result.Menu != nil {
+		if pending == nil {
+			m.err = fmt.Errorf("menu action has no pending request")
+			m.status = m.err.Error()
+			return m, nil
+		}
+		if err := validateItemMenu(*msg.result.Menu); err != nil {
+			m.err = err
+			m.status = err.Error()
+			return m, nil
+		}
+		title := strings.TrimSpace(msg.result.Menu.Title)
+		if title == "" {
+			title = "ACTIONS"
+		}
+		returnMode := primaryReturnMode(m.mode)
+		m.mode = modeMenu
+		m.menu = menuState{
+			Title: title, ItemID: pending.ItemID,
+			Entries:    append([]MenuEntry(nil), msg.result.Menu.Entries...),
+			ReturnMode: returnMode,
+		}
+		return m.reflow(), nil
+	}
 	if msg.result.Input != nil {
 		if pending == nil {
 			m.err = fmt.Errorf("input action has no pending request")
 			m.status = m.err.Error()
 			return m, nil
 		}
+		returnMode := primaryReturnMode(m.mode)
 		m.mode = modeInput
 		m.input = inputState{
 			Title: msg.result.Input.Title, Prompt: msg.result.Input.Prompt,
 			Request: *pending, Value: msg.result.Input.InitialValue,
-			SubmitStatus: msg.result.Input.SubmitStatus,
+			SubmitStatus: msg.result.Input.SubmitStatus, ReturnMode: returnMode,
 		}
 		return m.reflow(), nil
 	}
@@ -98,10 +127,12 @@ func (m model) handleActionResult(msg actionResultMsg) (tea.Model, tea.Cmd) {
 			m.status = m.err.Error()
 			return m, nil
 		}
+		returnMode := primaryReturnMode(m.mode)
 		m.mode = modeConfirm
 		m.confirm = confirmState{
 			Title: msg.result.Confirmation.Title, Body: msg.result.Confirmation.Body,
 			Request: *pending, SubmitStatus: msg.result.Confirmation.SubmitStatus,
+			ReturnMode: returnMode,
 		}
 		return m.reflow(), nil
 	}
@@ -115,9 +146,67 @@ func (m model) handleActionResult(msg actionResultMsg) (tea.Model, tea.Cmd) {
 			m.status = err.Error()
 			return m, nil
 		}
+		if pending != nil && isDeleteAction(pending.ActionID) {
+			m.selectAfterDelete(pending.ItemID, msg.result.SelectItemID, previousRows)
+		}
 		m = m.reflow()
 	}
 	return m, nil
+}
+
+func isDeleteAction(action ActionID) bool {
+	return action == ActionDelete || action == ActionDeleteSession
+}
+
+func (m *model) selectAfterDelete(deletedID, preferred list.ItemID, previousRows []list.ItemID) {
+	if preferred != "" {
+		if m.items.Select(preferred) {
+			return
+		}
+		if m.items.Query() != "" {
+			m.items.SetQuery("")
+			if m.items.Select(preferred) {
+				return
+			}
+		}
+	}
+	if m.items.Select(deletedID) {
+		return
+	}
+	position := 0
+	for i, id := range previousRows {
+		if id == deletedID {
+			position = i
+			break
+		}
+	}
+	if m.selectSurvivor(previousRows, position) {
+		return
+	}
+	if m.items.Query() != "" {
+		m.items.SetQuery("")
+		if m.selectSurvivor(previousRows, position) {
+			return
+		}
+	}
+	rows := m.items.Rows()
+	if len(rows) > 0 {
+		m.items.Select(rows[min(position, len(rows)-1)].Item.ID)
+	}
+}
+
+func (m *model) selectSurvivor(previousRows []list.ItemID, position int) bool {
+	for i := position + 1; i < len(previousRows); i++ {
+		if m.items.Select(previousRows[i]) {
+			return true
+		}
+	}
+	for i := min(position-1, len(previousRows)-1); i >= 0; i-- {
+		if m.items.Select(previousRows[i]) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m model) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -187,8 +276,10 @@ func (m model) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case m.keys.Matches(KeyModeNormal, ActionClearFilter, msg):
 		m.items.SetQuery("")
 		m.status = statusFilterCleared
+	case m.keys.Matches(KeyModeNormal, ActionContextMenu, msg):
+		return m.startSelectedRequest(ActionContextMenu)
 	case m.keys.Matches(KeyModeNormal, ActionCreateSession, msg):
-		return m.startRequest(ActionRequest{ActionID: ActionCreateSession}, statusRunningAction)
+		return m.startAction(ActionCreateSession, "")
 	case m.keys.Matches(KeyModeNormal, ActionCreateWindow, msg):
 		return m.startSelectedRequest(ActionCreateWindow)
 	case m.keys.Matches(KeyModeNormal, ActionRename, msg):
@@ -196,7 +287,7 @@ func (m model) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case m.keys.Matches(KeyModeNormal, ActionDelete, msg):
 		return m.startSelectedRequest(ActionDelete)
 	case m.keys.Matches(KeyModeNormal, ActionRefresh, msg):
-		return m.startRequest(ActionRequest{ActionID: ActionRefresh}, statusRefreshing)
+		return m.startAction(ActionRefresh, "")
 	case m.keys.Matches(KeyModeNormal, ActionToggleProjection, msg):
 		return m.startProjectionToggle()
 	case m.keys.Matches(KeyModeNormal, ActionOpen, msg):
@@ -240,7 +331,7 @@ func (m model) updateJumpMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	m.mode = modeBrowse
 	m.jump = jumpState{}
-	return m.startItemRequest(ActionOpen, itemID)
+	return m.startAction(ActionOpen, itemID)
 }
 
 func (m *model) moveJump(delta int) {
@@ -284,7 +375,7 @@ func (m model) updateFilterMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.status = statusFilterClosed
 			return m, nil
 		}
-		return m.startRequest(ActionRequest{ActionID: ActionOpen, ItemID: selected.Item.ID}, statusSwitching)
+		return m.startAction(ActionOpen, selected.Item.ID)
 	case m.keys.Matches(KeyModeFilter, ActionMoveUp, msg):
 		m.items.Move(-1)
 	case m.keys.Matches(KeyModeFilter, ActionMoveDown, msg):
@@ -308,6 +399,8 @@ func (m model) updateFilterMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.items.SetQuery("")
 		m.mode = modeBrowse
 		m.status = statusFilterCleared
+	case m.keys.Matches(KeyModeFilter, ActionContextMenu, msg):
+		return m.startSelectedRequest(ActionContextMenu)
 	default:
 		if msg.Text != "" {
 			m.items.SetQuery(m.items.Query() + msg.Text)
@@ -317,10 +410,47 @@ func (m model) updateFilterMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m.reflow(), nil
 }
 
+func (m model) updateMenuMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case m.keys.Matches(KeyModeMenu, ActionCancel, msg):
+		m.mode = primaryReturnMode(m.menu.ReturnMode)
+		m.menu = menuState{}
+		m.status = statusActionCanceled
+		return m, nil
+	case m.keys.Matches(KeyModeMenu, ActionMoveUp, msg):
+		m.menu.Cursor = max(0, m.menu.Cursor-1)
+		return m, nil
+	case m.keys.Matches(KeyModeMenu, ActionMoveDown, msg):
+		m.menu.Cursor = min(len(m.menu.Entries)-1, m.menu.Cursor+1)
+		return m, nil
+	case m.keys.Matches(KeyModeMenu, ActionConfirm, msg):
+		return m.activateMenuEntry(m.menu.Cursor)
+	}
+	for i, entry := range m.menu.Entries {
+		if strings.EqualFold(msg.Text, string(entry.Activation)) {
+			return m.activateMenuEntry(i)
+		}
+	}
+	return m, nil
+}
+
+func (m model) activateMenuEntry(index int) (tea.Model, tea.Cmd) {
+	if index < 0 || index >= len(m.menu.Entries) {
+		m.err = fmt.Errorf("menu selection is unavailable")
+		m.status = m.err.Error()
+		return m, nil
+	}
+	entry := m.menu.Entries[index]
+	itemID := m.menu.ItemID
+	m.mode = primaryReturnMode(m.menu.ReturnMode)
+	m.menu = menuState{}
+	return m.startAction(entry.Action, itemID)
+}
+
 func (m model) updateInputMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.keys.Matches(KeyModeInput, ActionCancel, msg):
-		m.mode = modeBrowse
+		m.mode = primaryReturnMode(m.input.ReturnMode)
 		m.input = inputState{}
 		m.status = statusActionCanceled
 	case m.keys.Matches(KeyModeInput, ActionConfirm, msg):
@@ -335,7 +465,7 @@ func (m model) updateInputMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if strings.TrimSpace(status) == "" {
 			status = statusRunningAction
 		}
-		m.mode = modeBrowse
+		m.mode = primaryReturnMode(m.input.ReturnMode)
 		m.input = inputState{}
 		return m.startRequest(request, status)
 	case m.keys.Matches(KeyModeInput, ActionBackspace, msg):
@@ -358,7 +488,7 @@ func (m model) updateInputMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m model) updateConfirmMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.keys.Matches(KeyModeConfirm, ActionCancel, msg):
-		m.mode = modeBrowse
+		m.mode = primaryReturnMode(m.confirm.ReturnMode)
 		m.confirm = confirmState{}
 		m.status = statusActionCanceled
 	case m.keys.Matches(KeyModeConfirm, ActionConfirm, msg):
@@ -368,11 +498,18 @@ func (m model) updateConfirmMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if strings.TrimSpace(status) == "" {
 			status = statusRunningAction
 		}
-		m.mode = modeBrowse
+		m.mode = primaryReturnMode(m.confirm.ReturnMode)
 		m.confirm = confirmState{}
 		return m.startRequest(request, status)
 	}
 	return m, nil
+}
+
+func primaryReturnMode(mode uiMode) uiMode {
+	if mode == modeFilter {
+		return modeFilter
+	}
+	return modeBrowse
 }
 
 func (m model) startProjectionToggle() (tea.Model, tea.Cmd) {
@@ -380,7 +517,7 @@ func (m model) startProjectionToggle() (tea.Model, tea.Cmd) {
 	if selected, ok := m.selectedRow(); ok {
 		itemID = selected.Item.ID
 	}
-	return m.startRequest(ActionRequest{ActionID: ActionToggleProjection, ItemID: itemID}, statusRunningAction)
+	return m.startAction(ActionToggleProjection, itemID)
 }
 
 func (m model) startSelectedRequest(action ActionID) (tea.Model, tea.Cmd) {
@@ -389,13 +526,16 @@ func (m model) startSelectedRequest(action ActionID) (tea.Model, tea.Cmd) {
 		m.status = statusNoSelection
 		return m, nil
 	}
-	return m.startItemRequest(action, selected.Item.ID)
+	return m.startAction(action, selected.Item.ID)
 }
 
-func (m model) startItemRequest(action ActionID, itemID list.ItemID) (tea.Model, tea.Cmd) {
+func (m model) startAction(action ActionID, itemID list.ItemID) (tea.Model, tea.Cmd) {
 	status := statusRunningAction
-	if action == ActionOpen {
+	switch action {
+	case ActionOpen:
 		status = statusSwitching
+	case ActionRefresh:
+		status = statusRefreshing
 	}
 	return m.startRequest(ActionRequest{ActionID: action, ItemID: itemID}, status)
 }
@@ -403,6 +543,14 @@ func (m model) startItemRequest(action ActionID, itemID list.ItemID) (tea.Model,
 func (m model) startRequest(request ActionRequest, status string) (tea.Model, tea.Cmd) {
 	m.busy = true
 	m.pending = cloneRequest(request)
+	m.pendingRows = nil
+	if isDeleteAction(request.ActionID) && request.Confirmed {
+		rows := m.items.Rows()
+		m.pendingRows = make([]list.ItemID, len(rows))
+		for i, row := range rows {
+			m.pendingRows[i] = row.Item.ID
+		}
+	}
 	m.status = status
 	return m, runAction(m.dispatch, request)
 }

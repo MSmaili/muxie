@@ -43,6 +43,10 @@ func TestHeadersAndModalsSanitizeAndFit(t *testing.T) {
 			RenderSearchBar(SearchBarProps{Width: width, Filter: unsafe, Right: unsafe}),
 			RenderInputModal(InputModalProps{LineWidth: width, Title: "INPUT", Prompt: unsafe, Value: unsafe, ModalStyle: border}),
 			RenderConfirmModal(ConfirmModalProps{LineWidth: width, Title: "CONFIRM", Body: unsafe, ModalStyle: border}),
+			RenderMenu(MenuProps{
+				LineWidth: width, Title: unsafe, ModalStyle: border,
+				Entries: []MenuEntry{{Action: ActionOpen, Label: unsafe, Activation: 'o'}},
+			}),
 		}
 		for _, output := range rendered {
 			if strings.Contains(output, "owned") || strings.Contains(output, "\nnext") {

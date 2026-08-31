@@ -55,20 +55,35 @@ func (a *LiveAdapter) Execute(ctx context.Context, request core.ActionRequest) (
 	if err := ctx.Err(); err != nil {
 		return core.ActionResult{}, err
 	}
-	if request.ActionID == core.ActionRefresh {
-		snapshot, err := a.loadSnapshot(ctx)
-		return core.ActionResult{Message: "refreshed", Snapshot: &snapshot}, err
-	}
-	if request.ActionID == core.ActionCreateSession {
-		return a.createSession(ctx, request)
-	}
 	if request.ActionID == core.ActionToggleProjection {
 		return a.toggleProjection(ctx, request.ItemID)
 	}
-
-	item, err := a.resolveItem(request.ItemID)
-	if err != nil {
-		return core.ActionResult{}, err
+	var item liveItem
+	if request.ItemID != "" {
+		var err error
+		item, err = a.resolveItem(request.ItemID)
+		if err != nil {
+			return core.ActionResult{}, err
+		}
+	}
+	switch request.ActionID {
+	case core.ActionRefresh:
+		snapshot, err := a.loadSnapshot(ctx)
+		return core.ActionResult{Message: "refreshed", Snapshot: &snapshot}, err
+	case core.ActionCreateSession:
+		return a.createSession(ctx, request)
+	case core.ActionContextMenu:
+		if item.ID == "" {
+			return core.ActionResult{}, fmt.Errorf("action requires a selected item")
+		}
+		menu, err := contextualMenu(item)
+		if err != nil {
+			return core.ActionResult{}, err
+		}
+		return core.ActionResult{Menu: &menu}, nil
+	}
+	if item.ID == "" {
+		return core.ActionResult{}, fmt.Errorf("action requires a selected item")
 	}
 	switch request.ActionID {
 	case core.ActionOpen:
@@ -95,11 +110,40 @@ func (a *LiveAdapter) Execute(ctx context.Context, request core.ActionRequest) (
 		return a.createWindow(ctx, request, item)
 	case core.ActionRename:
 		return a.renameItem(ctx, request, item)
+	case core.ActionRenameSession:
+		session, err := owningSessionItem(item)
+		if err != nil {
+			return core.ActionResult{}, err
+		}
+		return a.renameItem(ctx, request, session)
 	case core.ActionDelete:
 		return a.deleteItem(ctx, request, item)
+	case core.ActionDeleteSession:
+		session, err := owningSessionItem(item)
+		if err != nil {
+			return core.ActionResult{}, err
+		}
+		return a.deleteItem(ctx, request, session)
 	default:
 		return core.ActionResult{}, fmt.Errorf("action %q is not implemented", request.ActionID)
 	}
+}
+
+func owningSessionItem(item liveItem) (liveItem, error) {
+	if item.Kind != liveDestination || strings.TrimSpace(item.SessionTarget) == "" {
+		return liveItem{}, fmt.Errorf("item %q has no owning session action", item.ID)
+	}
+	return liveItem{
+		ID:             item.ID,
+		SessionID:      item.SessionID,
+		Kind:           liveSession,
+		Label:          item.SessionName,
+		Name:           item.SessionName,
+		SessionName:    item.SessionName,
+		Target:         item.SessionTarget,
+		MutationTarget: item.SessionTarget,
+		SessionTarget:  item.SessionTarget,
+	}, nil
 }
 
 func liveItemExists(state backend.StateResult, item liveItem) bool {

@@ -6,7 +6,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/MSmaili/hetki/internal/terminal"
 	"github.com/MSmaili/hetki/internal/tui/list"
 )
 
@@ -48,13 +47,21 @@ func (m model) View() tea.View {
 	rendered := layout.frameStyle.Width(lineWidth).Render(lipgloss.JoinVertical(lipgloss.Left, header, middle))
 
 	var overlay string
-	if m.mode == modeInput {
+	switch m.mode {
+	case modeMenu:
+		overlay = RenderMenu(MenuProps{
+			LineWidth: lineWidth, MaxHeight: lipgloss.Height(rendered),
+			Title: m.menu.Title, Entries: m.menu.Entries, Selected: m.menu.Cursor,
+			Hint: menuControls(m.keys), ModalStyle: t.modal, TitleStyle: t.modalTitle,
+			EntryStyle: t.row, KeyStyle: t.jumpLabel, SelectedStyle: t.selectedRow, HintStyle: t.modalHint,
+		})
+	case modeInput:
 		overlay = RenderInputModal(InputModalProps{
 			LineWidth: lineWidth, Title: m.input.Title, Prompt: m.input.Prompt, Value: m.input.Value,
 			Hint:       modalControls(m.keys, KeyModeInput, "submit"),
 			ModalStyle: t.modal, TitleStyle: t.modalTitle, HintStyle: t.modalHint,
 		})
-	} else if m.mode == modeConfirm {
+	case modeConfirm:
 		overlay = RenderConfirmModal(ConfirmModalProps{
 			LineWidth: lineWidth, Title: m.confirm.Title, Body: m.confirm.Body,
 			Hint:       modalControls(m.keys, KeyModeConfirm, "confirm"),
@@ -62,7 +69,7 @@ func (m model) View() tea.View {
 		})
 	}
 	if overlay != "" {
-		x := max(0, (lineWidth-terminal.Width(overlay))/2)
+		x := max(0, (lineWidth-lipgloss.Width(overlay))/2)
 		y := max(0, (lipgloss.Height(rendered)-lipgloss.Height(overlay))/2)
 		rendered = lipgloss.NewCompositor(
 			lipgloss.NewLayer(rendered),
@@ -96,6 +103,17 @@ func modalControls(keys KeyMap, mode KeyMode, confirmLabel string) string {
 		}
 	}
 	return strings.Join(parts, " | ")
+}
+
+func menuControls(keys KeyMap) string {
+	up := keys.Keys(KeyModeMenu, ActionMoveUp)
+	down := keys.Keys(KeyModeMenu, ActionMoveDown)
+	confirm := keys.Keys(KeyModeMenu, ActionConfirm)
+	cancel := keys.Keys(KeyModeMenu, ActionCancel)
+	if len(up) == 0 || len(down) == 0 || len(confirm) == 0 || len(cancel) == 0 {
+		return ""
+	}
+	return up[0] + "/" + down[0] + " move | " + confirm[0] + " select | " + cancel[0] + " cancel"
 }
 
 func headerRight(m model) string {
