@@ -171,7 +171,7 @@ jobs:
         run: |
           flags=(--verify-tag --title "${GITHUB_REF_NAME}" --generate-notes)
           [[ "${GITHUB_REF_NAME}" == *-* ]] && flags+=(--prerelease)
-          gh release create "${GITHUB_REF_NAME}" \
+          gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" \
             dist/hetki-darwin-amd64 \
             dist/hetki-darwin-arm64 \
             dist/hetki-linux-amd64 \
