@@ -6,8 +6,8 @@ command -v goreleaser >/dev/null 2>&1 || {
     exit 1
 }
 goreleaser_version="$(goreleaser --version | awk '/^GitVersion:/ { sub(/^v/, "", $2); print $2 }')"
-[[ "$goreleaser_version" == 2.17.1 ]] || {
-    echo "goreleaser v2.17.1 is required" >&2
+[[ "$goreleaser_version" == 2.18.0 ]] || {
+    echo "goreleaser v2.18.0 is required" >&2
     exit 1
 }
 go_version="$(awk '$1 == "go" { print $2; exit }' go.mod)"

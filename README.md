@@ -12,7 +12,7 @@ A keyboard-first tmux workspace manager for Linux and macOS.
 
 ## Installation
 
-Hetki requires tmux.
+Hetki requires tmux and, on macOS, Ventura 13 or later.
 
 ### Using Go
 

@@ -112,7 +112,7 @@ jobs:
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
           distribution: goreleaser
-          version: v2.17.1
+          version: v2.18.0
           install-only: true
 
       - name: Prove release artifacts are reproducible
