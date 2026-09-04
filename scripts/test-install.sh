@@ -344,7 +344,7 @@ printf '{"sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","object":{"sha":"%s","
 
 echo "== replacement preserves the existing mode =="
 if HETKI_TEST_PRESEED_MODE=6755 run_case preserve-mode ok latest v0.9.0; then
-    mode="$(stat -f '%Mp%Lp' "$BIN" 2>/dev/null || stat -c '%a' "$BIN")"
+    mode="$(stat -c '%a' "$BIN" 2>/dev/null || stat -f '%Mp%Lp' "$BIN")"
     check "existing mode preserved" "[[ \"\$mode\" == 6755 ]]"
 else
     FAIL=$((FAIL + 1)); note "installer failed: $(tail -3 "$WORK/preserve-mode/err.log")"
@@ -421,8 +421,8 @@ race_dir="$WORK/pre-rename-race"
 mkdir -p "$race_dir"
 printf old >"$race_dir/hetki"
 ln "$race_dir/hetki" "$race_dir/hetki.hetki-backup"
-original_id="$(stat -f '%d:%i' "$race_dir/hetki" 2>/dev/null || stat -c '%d:%i' "$race_dir/hetki")"
-backup_id="$(stat -f '%d:%i' "$race_dir/hetki.hetki-backup" 2>/dev/null || stat -c '%d:%i' "$race_dir/hetki.hetki-backup")"
+original_id="$(stat -c '%d:%i' "$race_dir/hetki" 2>/dev/null || stat -f '%d:%i' "$race_dir/hetki")"
+backup_id="$(stat -c '%d:%i' "$race_dir/hetki.hetki-backup" 2>/dev/null || stat -f '%d:%i' "$race_dir/hetki.hetki-backup")"
 rm "$race_dir/hetki"; printf external >"$race_dir/hetki"
 if bash -c 'source "$1"; ROLLBACK_TARGET="$2/hetki"; ROLLBACK_BACKUP="$2/hetki.hetki-backup"; ROLLBACK_BACKUP_ID="$3"; ORIGINAL_TARGET_ID="$4"; CANDIDATE_ID=unused; REPLACEMENT_PENDING=1; cleanup; REPLACEMENT_PENDING=0; [[ "$(cat "$2/hetki")" == external && "$(cat "$2/hetki.hetki-backup")" == old ]]' \
     _ "$INSTALL_LIB" "$race_dir" "$backup_id" "$original_id"; then
@@ -435,7 +435,7 @@ echo "== fresh-install cleanup preserves a concurrently created destination =="
 fresh_race_dir="$WORK/fresh-race"
 mkdir -p "$fresh_race_dir"
 printf candidate >"$fresh_race_dir/candidate"
-candidate_id="$(stat -f '%d:%i' "$fresh_race_dir/candidate" 2>/dev/null || stat -c '%d:%i' "$fresh_race_dir/candidate")"
+candidate_id="$(stat -c '%d:%i' "$fresh_race_dir/candidate" 2>/dev/null || stat -f '%d:%i' "$fresh_race_dir/candidate")"
 printf external >"$fresh_race_dir/hetki"
 if bash -c 'source "$1"; ROLLBACK_TARGET="$2/hetki"; ROLLBACK_BACKUP=""; CANDIDATE_ID="$3"; REPLACEMENT_PENDING=1; cleanup; [[ "$(cat "$2/hetki")" == external ]]' \
     _ "$INSTALL_LIB" "$fresh_race_dir" "$candidate_id"; then

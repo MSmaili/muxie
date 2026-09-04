@@ -18,7 +18,7 @@ self_test() {
     for tag in v0.0.0 v1.2.3 v1.2.3-rc.1 v1.2.3-alpha-beta; do
         valid_release_tag "$tag" || return 1
     done
-    for tag in v1.2 v01.2.3 v1.2.3-01 v1.2.3-a..b v1.2.3-. v1.2.3-a. v1.2.3+build; do
+    for tag in 1.2.3 v1.2 v01.2.3 v1.2.3-01 v1.2.3-a..b v1.2.3-. v1.2.3-a. v1.2.3+build; do
         ! valid_release_tag "$tag" || return 1
     done
 }

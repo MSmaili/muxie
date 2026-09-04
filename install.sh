@@ -85,7 +85,7 @@ ACTIVE_PGID_FILE="$(mktemp)"
 TEMP_FILES+=("$ACTIVE_PGID_FILE")
 
 file_id() {
-    stat -f '%d:%i' "$1" 2>/dev/null || stat -c '%d:%i' "$1"
+    stat -c '%d:%i' "$1" 2>/dev/null || stat -f '%d:%i' "$1"
 }
 
 owned_backup_exists() {
@@ -589,8 +589,8 @@ install_verified_binary() {
         ROLLBACK_BACKUP="$backup_path"
         ORIGINAL_TARGET_ID="$(file_id "$target_path")"
         REPLACEMENT_PENDING=3
-        target_mode="$(stat -f '%Mp%Lp' "$target_path" 2>/dev/null || stat -c '%a' "$target_path")"
-        target_owner="$(stat -f '%u:%g' "$target_path" 2>/dev/null || stat -c '%u:%g' "$target_path")"
+        target_mode="$(stat -c '%a' "$target_path" 2>/dev/null || stat -f '%Mp%Lp' "$target_path")"
+        target_owner="$(stat -c '%u:%g' "$target_path" 2>/dev/null || stat -f '%u:%g' "$target_path")"
         if ! ln "$target_path" "$backup_path"; then
             error "Could not create exclusive recovery backup at ${backup_path}"
         fi
@@ -604,7 +604,7 @@ install_verified_binary() {
         REPLACEMENT_PENDING=1
     fi
     if [[ -n "$target_owner" ]]; then
-        candidate_owner="$(stat -f '%u:%g' "$binary" 2>/dev/null || stat -c '%u:%g' "$binary")"
+        candidate_owner="$(stat -c '%u:%g' "$binary" 2>/dev/null || stat -f '%u:%g' "$binary")"
         if [[ "$candidate_owner" != "$target_owner" ]]; then
             command -v chown >/dev/null 2>&1 || error "chown is required to preserve installation ownership"
             chown "$target_owner" "$binary" || error "Could not preserve installation ownership"

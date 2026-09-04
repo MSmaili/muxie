@@ -19,3 +19,12 @@ go install github.com/MSmaili/hetki@latest
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MSmaili/hetki/main/install.sh | bash
 ```
+
+## Releasing
+
+Push a strict `vX.Y.Z` tag; do not create the GitHub release manually. The tag workflow tests, attests, and publishes it.
+
+```bash
+git tag v0.3.0
+git push origin v0.3.0
+```

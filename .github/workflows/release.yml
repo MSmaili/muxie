@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - "v*"
+      - "*"
 
 permissions:
   contents: read
@@ -18,6 +18,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Validate pushed release tag
+        if: github.event_name == 'push'
+        run: ./scripts/validate-release-tag.sh "${GITHUB_REF_NAME}"
 
       - name: Set up exact Go version
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
