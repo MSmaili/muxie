@@ -35,7 +35,7 @@ func TestProjectFlatBuildsStablePathDestinations(t *testing.T) {
 	code := index[codeID]
 	assert.Equal(t, "%7", code.Target, "the active pane owns a collapsed path destination")
 	assert.Equal(t, "$1:@1", code.MutationTarget)
-	assert.Equal(t, "deveditor", itemByID(snapshot.Items, codeID).Primary)
+	assert.Equal(t, "deveditor", itemByID(snapshot.Items, codeID).Primary)
 	assert.Equal(t, "~/code", itemByID(snapshot.Items, codeID).Secondary)
 	assert.Equal(t, codeID, snapshot.ActiveItemID)
 	assert.NotEqual(t, codeID, destinationItemID("$1", "@2", "/home/me/code"))

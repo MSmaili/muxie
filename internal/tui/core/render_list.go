@@ -194,7 +194,7 @@ func displayJumpLabel(label string) string {
 	if label == "" {
 		return ""
 	}
-	return "‹" + label + "›"
+	return label
 }
 
 func decoratedLabel(row TreeRowProps, styles TreeStyles, compact bool) string {

@@ -8,29 +8,36 @@ import (
 	"github.com/MSmaili/hetki/internal/terminal"
 )
 
-func TestSearchBarShowsTheSlashShortcutPrompt(t *testing.T) {
+func TestSearchBarRendersModeAppropriateContent(t *testing.T) {
 	prompt := lipgloss.NewStyle().Foreground(lipgloss.Color("0")).Background(lipgloss.Color("2"))
-	placeholder := lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
 	query := lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
 	got := RenderSearchBar(SearchBarProps{
-		Width: 32, Right: "3/3", Style: query, PromptStyle: prompt, PlaceholderStyle: placeholder,
+		Width: 32, Prompt: " / ", Right: "3/3", Style: query, PromptStyle: prompt,
 	})
-	if !strings.Contains(got, prompt.Render(" / ")) {
-		t.Fatalf("search shortcut is not rendered as a box: %q", got)
-	}
-	if !strings.Contains(got, placeholder.Render(" search destinations")) {
-		t.Fatalf("search placeholder did not use its subdued style: %q", got)
-	}
-	if plain := terminal.Sanitize(got); plain != " /  search destinations      3/3" {
-		t.Fatalf("search header = %q", plain)
+	if !strings.Contains(got, prompt.Render(" / ")) || terminal.Width(got) != 32 {
+		t.Fatalf("search shortcut header = %q", got)
 	}
 
-	active := RenderSearchBar(SearchBarProps{Width: 20, Filter: "dev", Active: true, Style: query, PromptStyle: prompt, PlaceholderStyle: placeholder})
-	if !strings.Contains(active, query.Render(" dev_")) {
-		t.Fatalf("query used placeholder styling: %q", active)
+	active := RenderSearchBar(SearchBarProps{
+		Width: 20, Prompt: " / ", Filter: "dev", Active: true, Style: query, PromptStyle: prompt,
+	})
+	if !strings.Contains(active, query.Render(" dev█")) {
+		t.Fatalf("active query used the wrong styling: %q", active)
 	}
-	if plain := strings.TrimRight(terminal.Sanitize(active), " "); plain != " /  dev_" {
+	if plain := strings.TrimRight(terminal.Sanitize(active), " "); plain != " /  dev█" {
 		t.Fatalf("active search header = %q", plain)
+	}
+
+	hintStyle := lipgloss.NewStyle().Italic(true)
+	centered := RenderSearchBar(SearchBarProps{
+		Width: 32, Hint: "press key to jump", Right: "3/3", HintStyle: hintStyle,
+	})
+	if !strings.Contains(centered, hintStyle.Render("press key to jump")) {
+		t.Fatalf("centered hint did not use its style: %q", centered)
+	}
+	plain := terminal.Sanitize(centered)
+	if strings.HasPrefix(strings.TrimLeft(plain, " "), "/") || strings.Index(plain, "press key to jump") != (32-len("press key to jump"))/2 {
+		t.Fatalf("jump header = %q", plain)
 	}
 }
 

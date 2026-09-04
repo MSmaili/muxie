@@ -7,7 +7,7 @@ var selectionBg = lipgloss.Color("60")
 type theme struct {
 	meta              lipgloss.Style
 	searchBox         lipgloss.Style
-	searchPlaceholder lipgloss.Style
+	headerHint        lipgloss.Style
 	row               lipgloss.Style
 	rootRow           lipgloss.Style
 	childRow          lipgloss.Style
@@ -27,13 +27,13 @@ type theme struct {
 
 func defaultTheme() theme {
 	return theme{
-		meta:              lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
-		searchBox:         lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
-		searchPlaceholder: lipgloss.NewStyle().Foreground(lipgloss.Color("238")),
-		row:               lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
-		rootRow:           lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("224")),
-		childRow:          lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
-		secondary:         lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true),
+		meta:       lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
+		searchBox:  lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
+		headerHint: lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true),
+		row:        lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
+		rootRow:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("224")),
+		childRow:   lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
+		secondary:  lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true),
 		secondarySelected: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("252")).Background(selectionBg).Italic(true),
 		activeRow:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("224")),

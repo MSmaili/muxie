@@ -60,14 +60,14 @@ func TestRenderTreeShowsJumpLabelBesideTheRow(t *testing.T) {
 		Width: 40, Styles: TreeStyles{JumpLabel: labelStyle},
 		Rows: []TreeRowProps{{Primary: "editor", JumpLabel: "aa"}},
 	})[0]
-	if plain := terminal.Sanitize(line); plain != "  ‹aa› editor" {
-		t.Fatalf("jump keycap was not placed beside its row: %q", plain)
+	if plain := terminal.Sanitize(line); plain != "  aa editor" {
+		t.Fatalf("jump label was not placed beside its row: %q", plain)
 	}
 	if _, noColor := defaultTheme().jumpLabel.GetBackground().(lipgloss.NoColor); !noColor {
-		t.Fatal("jump keycaps must not form a continuous background column")
+		t.Fatal("jump labels must not form a continuous background column")
 	}
-	if width := terminal.Width(labelStyle.Render(displayJumpLabel("a"))); width != 3 {
-		t.Fatalf("single-character jump keycap width = %d, want three cells", width)
+	if width := terminal.Width(labelStyle.Render(displayJumpLabel("a"))); width != 1 {
+		t.Fatalf("single-character jump label width = %d, want one cell", width)
 	}
 }
 
@@ -84,11 +84,11 @@ func TestRenderTreeUsesFullWidthSelectionAndCompactIndicators(t *testing.T) {
 	got := RenderTree(TreeProps{Width: 24, Compact: true, Styles: styles, Rows: []TreeRowProps{{
 		Primary: "editor", Secondary: "~/code", JumpLabel: "a", Active: true, Selected: true,
 	}}})[0]
-	want := selected.Width(24).Render("│ ‹a› editor  " + secondarySelected.Render("~/code"))
+	want := selected.Width(24).Render("│ a editor  " + secondarySelected.Render("~/code"))
 	if got != want {
 		t.Fatalf("selected row was not styled as one full-width line:\n got %q\nwant %q", got, want)
 	}
-	if plain := strings.TrimRight(terminal.Sanitize(got), " "); plain != "│ ‹a› editor  ~/code" {
+	if plain := strings.TrimRight(terminal.Sanitize(got), " "); plain != "│ a editor  ~/code" {
 		t.Fatalf("selected row has excess markers or spacing: %q", plain)
 	}
 }

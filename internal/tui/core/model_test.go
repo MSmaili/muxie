@@ -59,8 +59,8 @@ func TestViewKeepsSecondaryTextOnItsRowWithoutGlobalHelp(t *testing.T) {
 	m = m.reflow()
 	content := m.View().Content
 	lines := strings.Split(content, "\n")
-	if len(lines) < 3 || !strings.Contains(terminal.Sanitize(lines[1]), "/  search destinations") || strings.Contains(lines[1], "──") || !strings.Contains(lines[2], "──") {
-		t.Fatalf("search input should be one row with only a bottom divider: %q", lines[:min(3, len(lines))])
+	if len(lines) < 3 || !strings.Contains(terminal.Sanitize(lines[1]), "press / to filter") || strings.Contains(lines[1], "──") || !strings.Contains(lines[2], "──") {
+		t.Fatalf("header hint should be one row with only a bottom divider: %q", lines[:min(3, len(lines))])
 	}
 	if strings.Contains(content, "KEYBINDINGS") || strings.Contains(content, "WORKSPACE:") || strings.Contains(content, "? help") {
 		t.Fatalf("removed global help or workspace data is still rendered: %q", content)
@@ -74,6 +74,20 @@ func TestViewKeepsSecondaryTextOnItsRowWithoutGlobalHelp(t *testing.T) {
 		}
 	}
 	t.Fatal("editor row not rendered")
+}
+
+func TestCompactLayoutKeepsItsEdges(t *testing.T) {
+	for _, width := range []int{4, 12, 24, 40} {
+		style := responsiveFrameStyle(defaultTheme().appBorder, width, 8)
+		require.True(t, style.GetBorderLeft(), "width %d lost its left edge", width)
+		require.True(t, style.GetBorderRight(), "width %d lost its right edge", width)
+	}
+
+	short := responsiveFrameStyle(defaultTheme().appBorder, 24, 4)
+	require.True(t, short.GetBorderLeft())
+	require.True(t, short.GetBorderRight())
+	require.False(t, short.GetBorderTop())
+	require.False(t, short.GetBorderBottom())
 }
 
 func TestContextMenuOverlaySanitizesAndFitsNarrowTerminals(t *testing.T) {

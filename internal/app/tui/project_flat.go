@@ -112,7 +112,7 @@ func projectFlatDestination(
 
 	item := list.Item{
 		ID:           id,
-		Primary:      session.Name + "" + name,
+		Primary:      session.Name + "" + name,
 		Secondary:    displayPath(group.path, homeDir),
 		SearchFields: fields,
 	}

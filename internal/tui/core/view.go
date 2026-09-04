@@ -16,9 +16,9 @@ func (m model) View() tea.View {
 
 	contentLines := []string{
 		RenderSearchBar(SearchBarProps{
-			Width: innerW, Filter: m.items.Query(), Right: headerRight(m),
-			Active: m.mode == modeFilter, Compact: layout.compact,
-			Style: t.searchBox, PromptStyle: t.searchPrompt, PlaceholderStyle: t.searchPlaceholder, MetaStyle: t.meta,
+			Width: innerW, Filter: m.items.Query(), Hint: headerHint(m), Right: headerRight(m),
+			Prompt: headerPrompt(m), Active: m.mode == modeFilter,
+			Style: t.searchBox, PromptStyle: t.searchPrompt, HintStyle: t.headerHint, MetaStyle: t.meta,
 		}),
 		t.sectionLine.Render(strings.Repeat("─", innerW)),
 	}
@@ -116,6 +116,30 @@ func menuControls(keys KeyMap) string {
 	return up[0] + "/" + down[0] + " move | " + confirm[0] + " select | " + cancel[0] + " cancel"
 }
 
+func headerPrompt(m model) string {
+	switch m.mode {
+	case modeBrowse:
+		return " NORMAL "
+	case modeFilter:
+		return " FILTER "
+	case modeJump:
+		return " JUMP "
+	default:
+		return ""
+	}
+}
+
+func headerHint(m model) string {
+	switch m.mode {
+	case modeBrowse:
+		return "press / to filter or ; to jump"
+	case modeJump:
+		return "type a label to jump or / to filter"
+	default:
+		return ""
+	}
+}
+
 func headerRight(m model) string {
 	if m.err != nil {
 		return m.err.Error()
@@ -126,23 +150,29 @@ func headerRight(m model) string {
 	if notice := m.items.Snapshot().Notice; notice != "" {
 		return notice
 	}
-	return rootCountLabel(m.items.Snapshot(), m.items.ShownRoots())
+	return rootCountLabel(m.items.Snapshot(), m.items.ShownRoots(), m.items.Query())
 }
 
-func rootCountLabel(snapshot list.Snapshot, shown int) string {
+func rootCountLabel(snapshot list.Snapshot, shown int, query string) string {
 	total := len(snapshot.Items)
 	if total == 0 {
 		return ""
 	}
+	if strings.TrimSpace(query) == "" {
+		return fmt.Sprintf("%d", total)
+	}
 	return fmt.Sprintf("%d/%d", shown, total)
 }
 
-func responsiveFrameStyle(base lipgloss.Style, width int) lipgloss.Style {
-	if width < 32 {
+func responsiveFrameStyle(base lipgloss.Style, width, height int) lipgloss.Style {
+	if width < 4 {
 		return lipgloss.NewStyle()
 	}
-	if width < 52 {
-		return lipgloss.NewStyle().Padding(0, 1)
+	if height < 5 {
+		base = base.BorderTop(false).BorderBottom(false)
+	}
+	if width < 32 {
+		return base.Padding(0, 0)
 	}
 	if width < 72 {
 		return base.Padding(0, 1)

@@ -15,6 +15,29 @@ func TestHeaderShowsNonFatalSnapshotNotice(t *testing.T) {
 	require.Equal(t, "refreshing...", headerRight(m))
 }
 
+func TestHeaderTracksMode(t *testing.T) {
+	m := model{}
+	for _, tt := range []struct {
+		mode       uiMode
+		wantPrompt string
+		wantHint   string
+	}{
+		{mode: modeBrowse, wantPrompt: " NORMAL ", wantHint: "press / to filter or ; to jump"},
+		{mode: modeFilter, wantPrompt: " FILTER "},
+		{mode: modeJump, wantPrompt: " JUMP ", wantHint: "type a label to jump or / to filter"},
+		{mode: modeMenu},
+	} {
+		m.mode = tt.mode
+		require.Equal(t, tt.wantPrompt, headerPrompt(m))
+		require.Equal(t, tt.wantHint, headerHint(m))
+	}
+
+	m = newModel(viewSnapshot(), nil)
+	m.mode = modeFilter
+	m.items.SetQuery("dev")
+	require.Empty(t, headerHint(m))
+}
+
 func TestRootCountLabelShowsFilteredRootsOverTotal(t *testing.T) {
 	snapshot := list.Snapshot{Items: []list.Item{
 		{
@@ -28,10 +51,10 @@ func TestRootCountLabelShowsFilteredRootsOverTotal(t *testing.T) {
 	}}
 	model, err := list.New(snapshot)
 	require.NoError(t, err)
-	require.Equal(t, "2/2", rootCountLabel(snapshot, model.ShownRoots()))
+	require.Equal(t, "2", rootCountLabel(snapshot, model.ShownRoots(), model.Query()))
 
 	model.SetQuery("logs")
-	require.Equal(t, "1/2", rootCountLabel(snapshot, model.ShownRoots()))
+	require.Equal(t, "1/2", rootCountLabel(snapshot, model.ShownRoots(), model.Query()))
 	model.SetQuery("missing")
-	require.Equal(t, "0/2", rootCountLabel(snapshot, model.ShownRoots()))
+	require.Equal(t, "0/2", rootCountLabel(snapshot, model.ShownRoots(), model.Query()))
 }

@@ -145,7 +145,7 @@ func (m model) layout() layoutMetrics {
 	if height <= 0 {
 		height = 24
 	}
-	frameStyle := responsiveFrameStyle(m.theme.appBorder, lineWidth)
+	frameStyle := responsiveFrameStyle(m.theme.appBorder, lineWidth, height)
 	innerWidth := max(1, lineWidth-frameStyle.GetHorizontalFrameSize())
 	return layoutMetrics{
 		lineWidth:    lineWidth,
