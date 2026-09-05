@@ -108,7 +108,7 @@ func TestReplaceExecutableCancellationBeforeRenameLeavesDestinationUntouched(t *
 	cancel()
 
 	err := replaceExecutable(ctx, candidate, exe, testTarget("v1.1.0"))
-	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, context.Canceled, err)
 	assert.Equal(t, "v1.0.0", readScriptVersion(t, exe))
 	assert.NoFileExists(t, exe+".hetki-backup")
 }
