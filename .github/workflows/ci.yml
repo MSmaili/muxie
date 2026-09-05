@@ -91,7 +91,7 @@ jobs:
           version: v0.11.0
 
       - name: Scan reachable vulnerabilities with pinned govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
   release-reproducibility:
     runs-on: ubuntu-latest
