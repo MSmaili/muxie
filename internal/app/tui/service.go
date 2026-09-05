@@ -8,26 +8,26 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/MSmaili/hetki/internal/backend"
-	"github.com/MSmaili/hetki/internal/tui/core"
+	ui "github.com/MSmaili/hetki/internal/tui"
 	"github.com/MSmaili/hetki/internal/tui/list"
 )
 
 type Driver interface {
 	Load(context.Context) (list.Snapshot, error)
-	Execute(context.Context, core.ActionRequest) (core.ActionResult, error)
-	Navigate(context.Context, core.BackendTarget) error
+	Execute(context.Context, ui.ActionRequest) (ui.ActionResult, error)
+	Navigate(context.Context, ui.BackendTarget) error
 }
 
-type RunUIFunc func(context.Context, list.Snapshot, core.KeyMap, core.DispatchFunc) (core.BackendTarget, error)
+type RunUIFunc func(context.Context, list.Snapshot, ui.KeyMap, ui.DispatchFunc) (ui.BackendTarget, error)
 
 type Service struct {
 	Driver Driver
-	Keys   core.KeyMap
+	Keys   ui.KeyMap
 	RunUI  RunUIFunc
 }
 
 func NewService(detectBackend func(...string) (backend.Backend, error)) Service {
-	return Service{Driver: NewLiveAdapter(detectBackend), Keys: core.DefaultKeyMap(), RunUI: core.RunWithKeyMap}
+	return Service{Driver: NewLiveAdapter(detectBackend), Keys: ui.DefaultKeyMap(), RunUI: ui.RunWithKeyMap}
 }
 
 func (s Service) Run(ctx context.Context) error {
@@ -36,11 +36,11 @@ func (s Service) Run(ctx context.Context) error {
 	}
 	runUI := s.RunUI
 	if runUI == nil {
-		runUI = core.RunWithKeyMap
+		runUI = ui.RunWithKeyMap
 	}
 	keys := s.Keys
 	if keys.IsZero() {
-		keys = core.DefaultKeyMap()
+		keys = ui.DefaultKeyMap()
 	}
 
 	effectsCtx, cancelEffects := context.WithCancel(ctx)
@@ -54,17 +54,17 @@ func (s Service) Run(ctx context.Context) error {
 		return err
 	}
 
-	dispatch := func(request core.ActionRequest) (core.ActionResult, error) {
+	dispatch := func(request ui.ActionRequest) (ui.ActionResult, error) {
 		effectsMu.Lock()
 		if effectsClosed {
 			effectsMu.Unlock()
-			return core.ActionResult{}, context.Canceled
+			return ui.ActionResult{}, context.Canceled
 		}
 		effects.Add(1)
 		effectsMu.Unlock()
 		defer effects.Done()
 		if err := effectsCtx.Err(); err != nil {
-			return core.ActionResult{}, err
+			return ui.ActionResult{}, err
 		}
 		return s.Driver.Execute(effectsCtx, request)
 	}

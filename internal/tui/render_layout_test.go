@@ -1,4 +1,4 @@
-package core
+package tui
 
 import (
 	"strings"
@@ -11,15 +11,15 @@ import (
 func TestSearchBarRendersModeAppropriateContent(t *testing.T) {
 	prompt := lipgloss.NewStyle().Foreground(lipgloss.Color("0")).Background(lipgloss.Color("2"))
 	query := lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
-	got := RenderSearchBar(SearchBarProps{
-		Width: 32, Prompt: " / ", Right: "3/3", Style: query, PromptStyle: prompt,
+	got := renderSearchBar(searchBarProps{
+		Width: 32, Prompt: " / ", Right: "3/3", Theme: theme{searchBox: query, searchPrompt: prompt},
 	})
 	if !strings.Contains(got, prompt.Render(" / ")) || terminal.Width(got) != 32 {
 		t.Fatalf("search shortcut header = %q", got)
 	}
 
-	active := RenderSearchBar(SearchBarProps{
-		Width: 20, Prompt: " / ", Filter: "dev", Active: true, Style: query, PromptStyle: prompt,
+	active := renderSearchBar(searchBarProps{
+		Width: 20, Prompt: " / ", Filter: "dev", Active: true, Theme: theme{searchBox: query, searchPrompt: prompt},
 	})
 	if !strings.Contains(active, query.Render(" dev█")) {
 		t.Fatalf("active query used the wrong styling: %q", active)
@@ -29,8 +29,8 @@ func TestSearchBarRendersModeAppropriateContent(t *testing.T) {
 	}
 
 	hintStyle := lipgloss.NewStyle().Italic(true)
-	centered := RenderSearchBar(SearchBarProps{
-		Width: 32, Hint: "press key to jump", Right: "3/3", HintStyle: hintStyle,
+	centered := renderSearchBar(searchBarProps{
+		Width: 32, Hint: "press key to jump", Right: "3/3", Theme: theme{headerHint: hintStyle},
 	})
 	if !strings.Contains(centered, hintStyle.Render("press key to jump")) {
 		t.Fatalf("centered hint did not use its style: %q", centered)
@@ -47,12 +47,12 @@ func TestHeadersAndModalsSanitizeAndFit(t *testing.T) {
 
 	for width := 0; width <= 20; width++ {
 		rendered := []string{
-			RenderSearchBar(SearchBarProps{Width: width, Filter: unsafe, Right: unsafe}),
-			RenderInputModal(InputModalProps{LineWidth: width, Title: "INPUT", Prompt: unsafe, Value: unsafe, ModalStyle: border}),
-			RenderConfirmModal(ConfirmModalProps{LineWidth: width, Title: "CONFIRM", Body: unsafe, ModalStyle: border}),
-			RenderMenu(MenuProps{
-				LineWidth: width, Title: unsafe, ModalStyle: border,
-				Entries: []MenuEntry{{Action: ActionOpen, Label: unsafe, Activation: 'o'}},
+			renderSearchBar(searchBarProps{Width: width, Filter: unsafe, Right: unsafe}),
+			renderInputModal(inputModalProps{LineWidth: width, Title: "INPUT", Prompt: unsafe, Value: unsafe, Theme: theme{modal: border}}),
+			renderConfirmModal(confirmModalProps{LineWidth: width, Title: "CONFIRM", Body: unsafe, Theme: theme{modal: border}}),
+			renderMenu(menuProps{
+				LineWidth: width, Title: unsafe, Theme: theme{modal: border},
+				Entries: []MenuEntry{{Action: ActionOpen, Label: unsafe}},
 			}),
 		}
 		for _, output := range rendered {

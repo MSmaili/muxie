@@ -1,4 +1,4 @@
-package core
+package tui
 
 import (
 	"testing"
@@ -53,6 +53,34 @@ func TestDefaultContextMenuBindingsAreScopedToNormalAndFilter(t *testing.T) {
 	require.Empty(t, keys.Keys(KeyModeInput, ActionContextMenu))
 	require.Empty(t, keys.Keys(KeyModeConfirm, ActionContextMenu))
 	require.Empty(t, keys.Keys(KeyModeMenu, ActionContextMenu))
+}
+
+func TestDefaultMenuBindingsUseLocalControlsAndNormalActionFallback(t *testing.T) {
+	keys := DefaultKeyMap()
+	require.Equal(t, []string{"o"}, keys.Keys(KeyModeMenu, ActionOpen))
+	require.Equal(t, []string{"enter", "ctrl+y"}, keys.Keys(KeyModeMenu, ActionConfirm))
+	require.Equal(t, []string{"up", "k", "ctrl+p"}, keys.Keys(KeyModeMenu, ActionMoveUp))
+	require.Equal(t, []string{"down", "j", "ctrl+n"}, keys.Keys(KeyModeMenu, ActionMoveDown))
+	require.Equal(t, []string{"esc"}, keys.Keys(KeyModeMenu, ActionCancel))
+
+	for _, test := range []struct {
+		action ActionID
+		keys   []string
+	}{
+		{ActionRename, []string{"r"}},
+		{ActionRenameSession, []string{"R"}},
+		{ActionCreateWindow, []string{"a"}},
+		{ActionCreateSession, []string{"A"}},
+		{ActionDelete, []string{"x"}},
+		{ActionDeleteSession, []string{"X"}},
+		{ActionRefresh, []string{"ctrl+r"}},
+		{ActionToggleProjection, []string{"tab"}},
+	} {
+		require.Empty(t, keys.Keys(KeyModeMenu, test.action))
+		require.Equal(t, KeyModeNormal, keys.menuMode(test.action))
+		require.Equal(t, test.keys, keys.Keys(keys.menuMode(test.action), test.action))
+	}
+	require.Equal(t, KeyModeMenu, keys.menuMode(ActionOpen))
 }
 
 func TestDefaultConfirmationBindingsPreserveUppercaseChoices(t *testing.T) {

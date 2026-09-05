@@ -1,4 +1,4 @@
-package core
+package tui
 
 import (
 	"context"
@@ -96,7 +96,7 @@ func TestContextMenuOverlaySanitizesAndFitsNarrowTerminals(t *testing.T) {
 		m := newModel(viewSnapshot(), nil)
 		m.mode = modeMenu
 		m.initialJump = false
-		m.menu = menuState{Title: "WINDOW ACTIONS", Entries: []MenuEntry{{Action: ActionOpen, Label: unsafe, Activation: 'o'}}}
+		m.menu = menuState{Title: "WINDOW ACTIONS", Entries: []MenuEntry{{Action: ActionOpen, Label: unsafe}}}
 		m.width, m.height = width, 8
 		m = m.reflow()
 		content := m.View().Content
@@ -113,15 +113,15 @@ func TestContextMenuOverlaySanitizesAndFitsNarrowTerminals(t *testing.T) {
 
 func TestContextMenuViewportFitsAndCentersTheFullMenu(t *testing.T) {
 	entries := []MenuEntry{
-		{Action: ActionOpen, Label: "Open destination", Activation: 'o'},
-		{Action: ActionCreateSession, Label: "New session", Activation: 's'},
-		{Action: ActionCreateWindow, Label: "New window", Activation: 'w'},
-		{Action: ActionRename, Label: "Rename window", Activation: 'r'},
-		{Action: ActionDelete, Label: "Delete window", Activation: 'd'},
-		{Action: ActionRenameSession, Label: "Rename session", Activation: 'n'},
-		{Action: ActionDeleteSession, Label: "Delete session", Activation: 'x'},
-		{Action: ActionRefresh, Label: "Refresh", Activation: 'f'},
-		{Action: ActionToggleProjection, Label: "Toggle projection", Activation: 't'},
+		{Action: ActionOpen, Label: "Open destination"},
+		{Action: ActionRename, Label: "Rename window"},
+		{Action: ActionRenameSession, Label: "Rename session"},
+		{Action: ActionCreateWindow, Label: "New window"},
+		{Action: ActionCreateSession, Label: "New session"},
+		{Action: ActionDelete, Label: "Delete window"},
+		{Action: ActionDeleteSession, Label: "Delete session"},
+		{Action: ActionRefresh, Label: "Refresh"},
+		{Action: ActionToggleProjection, Label: "Toggle projection"},
 	}
 
 	short := newModel(viewSnapshot(), nil)
@@ -139,7 +139,7 @@ func TestContextMenuViewportFitsAndCentersTheFullMenu(t *testing.T) {
 		}
 	}
 	plain := terminal.Sanitize(content)
-	if !strings.Contains(plain, "Toggle projec") || strings.Contains(plain, "Open destination") {
+	if !strings.Contains(plain, "‹tab› Toggle proj...") || strings.Contains(plain, "Open destination") {
 		t.Fatalf("menu viewport did not follow the selection: %q", plain)
 	}
 
@@ -148,11 +148,12 @@ func TestContextMenuViewportFitsAndCentersTheFullMenu(t *testing.T) {
 	centered.menu.Cursor = 0
 	centered = centered.reflow()
 	content = centered.View().Content
-	overlay := RenderMenu(MenuProps{
+	plain = terminal.Sanitize(content)
+	require.Contains(t, plain, "‹ctrl+r› Refresh")
+	require.Contains(t, plain, "‹tab› Toggle projection")
+	overlay := renderMenu(menuProps{
 		LineWidth: 80, MaxHeight: lipgloss.Height(content), Title: centered.menu.Title,
-		Entries: entries, ModalStyle: centered.theme.modal, TitleStyle: centered.theme.modalTitle,
-		EntryStyle: centered.theme.row, KeyStyle: centered.theme.jumpLabel,
-		SelectedStyle: centered.theme.selectedRow, HintStyle: centered.theme.modalHint,
+		Entries: entries, Keys: centered.keys, Theme: centered.theme,
 	})
 	wantX := (80 - lipgloss.Width(overlay)) / 2
 	wantY := (lipgloss.Height(content) - lipgloss.Height(overlay)) / 2

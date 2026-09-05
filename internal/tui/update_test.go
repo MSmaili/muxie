@@ -1,4 +1,4 @@
-package core
+package tui
 
 import (
 	"testing"
@@ -147,12 +147,14 @@ func TestDirectActionKeysEmitStableActionAndItemIDs(t *testing.T) {
 		want       ActionRequest
 	}{
 		{name: "open", key: specialKey(tea.KeyEnter), selectedID: "window-2", want: ActionRequest{ActionID: ActionOpen, ItemID: "window-2"}},
-		{name: "refresh", key: printableKey("R"), selectedID: "window-2", want: ActionRequest{ActionID: ActionRefresh}},
+		{name: "refresh", key: controlKey('r'), selectedID: "window-2", want: ActionRequest{ActionID: ActionRefresh}},
 		{name: "toggle projection", key: specialKey(tea.KeyTab), selectedID: "window-2", want: ActionRequest{ActionID: ActionToggleProjection, ItemID: "window-2"}},
-		{name: "create session", key: printableKey("s"), selectedID: "session-1", want: ActionRequest{ActionID: ActionCreateSession}},
+		{name: "create session", key: printableKey("A"), selectedID: "session-1", want: ActionRequest{ActionID: ActionCreateSession}},
 		{name: "create window", key: printableKey("a"), selectedID: "window-2", want: ActionRequest{ActionID: ActionCreateWindow, ItemID: "window-2"}},
-		{name: "rename", key: printableKey("r"), selectedID: "window-2", want: ActionRequest{ActionID: ActionRename, ItemID: "window-2"}},
-		{name: "delete", key: printableKey("x"), selectedID: "window-2", want: ActionRequest{ActionID: ActionDelete, ItemID: "window-2"}},
+		{name: "rename window", key: printableKey("r"), selectedID: "window-2", want: ActionRequest{ActionID: ActionRename, ItemID: "window-2"}},
+		{name: "rename session", key: printableKey("R"), selectedID: "window-2", want: ActionRequest{ActionID: ActionRenameSession, ItemID: "window-2"}},
+		{name: "delete window", key: printableKey("x"), selectedID: "window-2", want: ActionRequest{ActionID: ActionDelete, ItemID: "window-2"}},
+		{name: "delete session", key: printableKey("X"), selectedID: "window-2", want: ActionRequest{ActionID: ActionDeleteSession, ItemID: "window-2"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var got ActionRequest
@@ -168,6 +170,24 @@ func TestDirectActionKeysEmitStableActionAndItemIDs(t *testing.T) {
 			cmd()
 			require.Equal(t, test.want, got)
 		})
+	}
+}
+
+func TestActionMnemonicsRemainTextInFilterAndInput(t *testing.T) {
+	for _, mode := range []uiMode{modeFilter, modeInput} {
+		m := browseModel(newModel(interactionSnapshot(), nil))
+		m.mode = mode
+		for _, letter := range "rRxXaA" {
+			var cmd tea.Cmd
+			m, cmd = updateModel(t, m, printableKey(string(letter)))
+			require.Nil(t, cmd)
+			require.False(t, m.busy)
+		}
+		if mode == modeFilter {
+			require.Equal(t, "rRxXaA", m.items.Query())
+		} else {
+			require.Equal(t, "rRxXaA", m.input.Value)
+		}
 	}
 }
 
@@ -246,6 +266,19 @@ func TestPromptAndConfirmationKeepTheOriginatingItemID(t *testing.T) {
 	cmd()
 	require.Equal(t, list.ItemID("window-2"), requests[len(requests)-1].ItemID)
 	require.True(t, requests[len(requests)-1].Confirmed)
+}
+
+func TestStatusIsClearedWhenARequestStopsBeingBusy(t *testing.T) {
+	m := browseModel(newModel(interactionSnapshot(), func(ActionRequest) (ActionResult, error) {
+		return ActionResult{Message: "refreshed"}, nil
+	}))
+	m, cmd := updateModel(t, m, controlKey('r'))
+	require.True(t, m.busy)
+	require.Equal(t, statusRefreshing, m.status)
+
+	m, _ = updateModel(t, m, cmd())
+	require.False(t, m.busy)
+	require.Empty(t, m.status)
 }
 
 func TestInvalidRefreshRetainsSnapshotAndSelection(t *testing.T) {

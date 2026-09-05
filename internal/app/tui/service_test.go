@@ -6,7 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/MSmaili/hetki/internal/tui/core"
+	ui "github.com/MSmaili/hetki/internal/tui"
 	"github.com/MSmaili/hetki/internal/tui/list"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,7 +26,7 @@ func awaitChannel[T any](t *testing.T, ch <-chan T) T {
 
 type switchDriver struct {
 	loads       int
-	navigations []core.BackendTarget
+	navigations []ui.BackendTarget
 	uiReturned  bool
 }
 
@@ -35,11 +35,11 @@ func (d *switchDriver) Load(context.Context) (list.Snapshot, error) {
 	return list.Snapshot{}, nil
 }
 
-func (d *switchDriver) Execute(context.Context, core.ActionRequest) (core.ActionResult, error) {
-	return core.ActionResult{Navigation: "dev"}, nil
+func (d *switchDriver) Execute(context.Context, ui.ActionRequest) (ui.ActionResult, error) {
+	return ui.ActionResult{Navigation: "dev"}, nil
 }
 
-func (d *switchDriver) Navigate(_ context.Context, outcome core.BackendTarget) error {
+func (d *switchDriver) Navigate(_ context.Context, outcome ui.BackendTarget) error {
 	if !d.uiReturned {
 		return assert.AnError
 	}
@@ -56,23 +56,23 @@ func (d *blockingDriver) Load(context.Context) (list.Snapshot, error) {
 	return list.Snapshot{}, nil
 }
 
-func (d *blockingDriver) Execute(ctx context.Context, _ core.ActionRequest) (core.ActionResult, error) {
+func (d *blockingDriver) Execute(ctx context.Context, _ ui.ActionRequest) (ui.ActionResult, error) {
 	close(d.started)
 	<-ctx.Done()
 	close(d.stopped)
-	return core.ActionResult{}, ctx.Err()
+	return ui.ActionResult{}, ctx.Err()
 }
 
-func (d *blockingDriver) Navigate(context.Context, core.BackendTarget) error { return nil }
+func (d *blockingDriver) Navigate(context.Context, ui.BackendTarget) error { return nil }
 
 func TestUIExitCancelsAndJoinsBusyEffect(t *testing.T) {
 	driver := &blockingDriver{started: make(chan struct{}), stopped: make(chan struct{})}
 	dispatchDone := make(chan error, 1)
 	service := Service{
 		Driver: driver,
-		RunUI: func(_ context.Context, _ list.Snapshot, _ core.KeyMap, dispatch core.DispatchFunc) (core.BackendTarget, error) {
+		RunUI: func(_ context.Context, _ list.Snapshot, _ ui.KeyMap, dispatch ui.DispatchFunc) (ui.BackendTarget, error) {
 			go func() {
-				_, err := dispatch(core.ActionRequest{ActionID: core.ActionCreateSession})
+				_, err := dispatch(ui.ActionRequest{ActionID: ui.ActionCreateSession})
 				dispatchDone <- err
 			}()
 			awaitChannel(t, driver.started)
@@ -98,10 +98,10 @@ type navigationDriver struct {
 func (d *navigationDriver) Load(context.Context) (list.Snapshot, error) {
 	return list.Snapshot{}, nil
 }
-func (d *navigationDriver) Execute(context.Context, core.ActionRequest) (core.ActionResult, error) {
-	return core.ActionResult{}, nil
+func (d *navigationDriver) Execute(context.Context, ui.ActionRequest) (ui.ActionResult, error) {
+	return ui.ActionResult{}, nil
 }
-func (d *navigationDriver) Navigate(ctx context.Context, _ core.BackendTarget) error {
+func (d *navigationDriver) Navigate(ctx context.Context, _ ui.BackendTarget) error {
 	close(d.started)
 	<-ctx.Done()
 	return ctx.Err()
@@ -111,7 +111,7 @@ func TestRunPreservesParentCancellation(t *testing.T) {
 	started := make(chan struct{})
 	service := Service{
 		Driver: &switchDriver{},
-		RunUI: func(ctx context.Context, _ list.Snapshot, _ core.KeyMap, _ core.DispatchFunc) (core.BackendTarget, error) {
+		RunUI: func(ctx context.Context, _ list.Snapshot, _ ui.KeyMap, _ ui.DispatchFunc) (ui.BackendTarget, error) {
 			close(started)
 			<-ctx.Done()
 			return "", tea.ErrProgramKilled
@@ -131,7 +131,7 @@ func TestPostExitNavigationUsesParentCancellation(t *testing.T) {
 	driver := &navigationDriver{started: make(chan struct{})}
 	service := Service{
 		Driver: driver,
-		RunUI: func(context.Context, list.Snapshot, core.KeyMap, core.DispatchFunc) (core.BackendTarget, error) {
+		RunUI: func(context.Context, list.Snapshot, ui.KeyMap, ui.DispatchFunc) (ui.BackendTarget, error) {
 			return "dev", nil
 		},
 	}
@@ -149,14 +149,14 @@ func TestSuccessfulSwitchNavigatesAfterUIWithoutRefresh(t *testing.T) {
 	driver := &switchDriver{}
 	service := Service{
 		Driver: driver,
-		RunUI: func(_ context.Context, _ list.Snapshot, _ core.KeyMap, dispatch core.DispatchFunc) (core.BackendTarget, error) {
+		RunUI: func(_ context.Context, _ list.Snapshot, _ ui.KeyMap, dispatch ui.DispatchFunc) (ui.BackendTarget, error) {
 			defer func() { driver.uiReturned = true }()
-			result, err := dispatch(core.ActionRequest{ActionID: core.ActionOpen, ItemID: "dev"})
+			result, err := dispatch(ui.ActionRequest{ActionID: ui.ActionOpen, ItemID: "dev"})
 			return result.Navigation, err
 		},
 	}
 
 	require.NoError(t, service.Run(context.Background()))
 	assert.Equal(t, 1, driver.loads)
-	assert.Equal(t, []core.BackendTarget{"dev"}, driver.navigations)
+	assert.Equal(t, []ui.BackendTarget{"dev"}, driver.navigations)
 }

@@ -1,6 +1,7 @@
-package core
+package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -54,11 +55,11 @@ func TestShortenPathZeroWidth(t *testing.T) {
 	}
 }
 
-func TestRenderTreeShowsJumpLabelBesideTheRow(t *testing.T) {
+func TestRenderListShowsJumpLabelBesideTheRow(t *testing.T) {
 	labelStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))
-	line := RenderTree(TreeProps{
-		Width: 40, Styles: TreeStyles{JumpLabel: labelStyle},
-		Rows: []TreeRowProps{{Primary: "editor", JumpLabel: "aa"}},
+	line := renderList(listProps{
+		Width: 40, Theme: theme{jumpLabel: labelStyle},
+		Rows: []rowProps{{Primary: "editor", JumpLabel: "aa"}},
 	})[0]
 	if plain := terminal.Sanitize(line); plain != "  aa editor" {
 		t.Fatalf("jump label was not placed beside its row: %q", plain)
@@ -71,17 +72,17 @@ func TestRenderTreeShowsJumpLabelBesideTheRow(t *testing.T) {
 	}
 }
 
-func TestRenderTreeUsesFullWidthSelectionAndCompactIndicators(t *testing.T) {
+func TestRenderListUsesFullWidthSelectionAndCompactIndicators(t *testing.T) {
 	selected := lipgloss.NewStyle().Background(lipgloss.Color("1"))
 	secondarySelected := lipgloss.NewStyle().Background(lipgloss.Color("1")).Italic(true)
 	labelStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))
-	styles := TreeStyles{
-		Secondary:         lipgloss.NewStyle().Italic(true),
-		SecondarySelected: secondarySelected,
-		SelectedRow:       selected,
-		JumpLabel:         labelStyle,
+	theme := theme{
+		secondary:         lipgloss.NewStyle().Italic(true),
+		secondarySelected: secondarySelected,
+		selectedRow:       selected,
+		jumpLabel:         labelStyle,
 	}
-	got := RenderTree(TreeProps{Width: 24, Compact: true, Styles: styles, Rows: []TreeRowProps{{
+	got := renderList(listProps{Width: 24, Compact: true, Theme: theme, Rows: []rowProps{{
 		Primary: "editor", Secondary: "~/code", JumpLabel: "a", Active: true, Selected: true,
 	}}})[0]
 	want := selected.Width(24).Render("│ a editor  " + secondarySelected.Render("~/code"))
@@ -93,25 +94,77 @@ func TestRenderTreeUsesFullWidthSelectionAndCompactIndicators(t *testing.T) {
 	}
 }
 
-func TestRenderTreeMakesOnlyTheActiveFlatRowBold(t *testing.T) {
-	styles := TreeStyles{
-		Row:       lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
-		ActiveRow: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2")),
+func TestRenderListMakesOnlyTheActiveFlatRowBold(t *testing.T) {
+	theme := theme{
+		row:       lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+		activeRow: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2")),
 	}
-	lines := RenderTree(TreeProps{Width: 24, Compact: true, Styles: styles, Rows: []TreeRowProps{
+	lines := renderList(listProps{Width: 24, Compact: true, Theme: theme, Rows: []rowProps{
 		{Primary: "inactive"},
 		{Primary: "active", Active: true},
 	}})
-	if lines[0] != styles.Row.Render("  inactive") {
+	if lines[0] != theme.row.Render("  inactive") {
 		t.Fatalf("inactive flat row used the wrong typography: %q", lines[0])
 	}
-	if lines[1] != styles.ActiveRow.Render("│ active") {
+	if lines[1] != theme.activeRow.Render("│ active") {
 		t.Fatalf("active flat row used the wrong typography: %q", lines[1])
 	}
 }
 
-func TestRenderTreeAlignsSecondaryColumnsAndTruncatesBothSides(t *testing.T) {
-	lines := RenderTree(TreeProps{Width: 48, Rows: []TreeRowProps{
+func TestRenderListDefaultThemeStylesEveryRowShapeTheSame(t *testing.T) {
+	theme := defaultTheme()
+	const width = 24
+	shapes := []struct {
+		name     string
+		row      rowProps
+		normal   string
+		active   string
+		selected string
+	}{
+		{name: "flat", row: rowProps{Primary: "flat"}, normal: "  flat", active: "│ flat", selected: "  flat"},
+		{
+			name: "tree root", row: rowProps{Primary: "root", Branch: true},
+			normal: "  " + theme.rail.Render("\uf0da ") + "root", active: "│ " + theme.rail.Render("\uf0da ") + "root", selected: "  \uf0da root",
+		},
+		{
+			name: "tree child", row: rowProps{Primary: "child", Depth: 1, TreePrefix: "└─ "},
+			normal: "    " + theme.rail.Render("└─ ") + "child", active: "│   " + theme.rail.Render("└─ ") + "child", selected: "    └─ child",
+		},
+	}
+	for _, shape := range shapes {
+		t.Run(shape.name, func(t *testing.T) {
+			if got := renderList(listProps{Width: width, Rows: []rowProps{shape.row}, Theme: theme})[0]; got != theme.row.Render(shape.normal) {
+				t.Fatalf("normal row style = %q", got)
+			}
+			active := shape.row
+			active.Active = true
+			if got := renderList(listProps{Width: width, Rows: []rowProps{active}, Theme: theme})[0]; got != theme.activeRow.Render(shape.active) {
+				t.Fatalf("active row style = %q", got)
+			}
+			selected := shape.row
+			selected.Selected = true
+			want := theme.selectedRow.Inherit(theme.row).Width(width).Render(shape.selected)
+			if got := renderList(listProps{Width: width, Rows: []rowProps{selected}, Theme: theme})[0]; got != want {
+				t.Fatalf("selected row style = %q, want %q", got, want)
+			}
+		})
+	}
+
+	path := theme.secondarySelected.Render("~/code")
+	if foreground := fmt.Sprint(theme.secondarySelected.GetForeground()); foreground != colorEmphasis {
+		t.Fatalf("selected path foreground = %q, want %q", foreground, colorEmphasis)
+	}
+	if background := fmt.Sprint(theme.secondarySelected.GetBackground()); background != colorSelection {
+		t.Fatalf("selected path background = %q, want %q", background, colorSelection)
+	}
+	line := renderList(listProps{Width: width, Rows: []rowProps{{Primary: "flat", Secondary: "~/code", Selected: true}}, Theme: theme})[0]
+	if !strings.Contains(line, path) {
+		t.Fatalf("selected path lost its contrast style: %q", line)
+	}
+}
+
+func TestRenderListAlignsSecondaryColumnsAndTruncatesBothSides(t *testing.T) {
+	lines := renderList(listProps{Width: 48, Rows: []rowProps{
 		{Primary: "dev > editor", Secondary: "~/code"},
 		{Primary: "production > logs", Secondary: "/var/log"},
 	}})
@@ -119,7 +172,7 @@ func TestRenderTreeAlignsSecondaryColumnsAndTruncatesBothSides(t *testing.T) {
 		t.Fatalf("secondary columns are not aligned: %#v", lines)
 	}
 
-	compact := RenderTree(TreeProps{Width: 40, Compact: true, Rows: []TreeRowProps{
+	compact := renderList(listProps{Width: 40, Compact: true, Rows: []rowProps{
 		{Primary: "dev > editor", Secondary: "~/code"},
 		{Primary: "production > logs", Secondary: "/var/log"},
 	}})
@@ -127,7 +180,7 @@ func TestRenderTreeAlignsSecondaryColumnsAndTruncatesBothSides(t *testing.T) {
 		t.Fatalf("compact flat rows lost aligned paths: %#v", compact)
 	}
 
-	line := RenderTree(TreeProps{Width: 24, Rows: []TreeRowProps{{
+	line := renderList(listProps{Width: 24, Rows: []rowProps{{
 		Primary: "a-very-long-session > a-very-long-window", Secondary: "~/a/very/long/final-path",
 	}}})[0]
 	if !strings.Contains(line, "...") || !strings.Contains(line, "path") {
@@ -138,10 +191,10 @@ func TestRenderTreeAlignsSecondaryColumnsAndTruncatesBothSides(t *testing.T) {
 	}
 }
 
-func TestRenderTreeSanitizesAndFitsNarrowWidths(t *testing.T) {
-	row := TreeRowProps{Primary: "\x1b]0;owned\a中👨‍👩‍👧é\nnext", Secondary: "~/bad\tpath\x1b[2J", JumpLabel: "\x1b[31ma\n"}
+func TestRenderListSanitizesAndFitsNarrowWidths(t *testing.T) {
+	row := rowProps{Primary: "\x1b]0;owned\a中👨‍👩‍👧é\nnext", Secondary: "~/bad\tpath\x1b[2J", JumpLabel: "\x1b[31ma\n"}
 	for width := 0; width <= 12; width++ {
-		line := RenderTree(TreeProps{Width: width, Rows: []TreeRowProps{row}})[0]
+		line := renderList(listProps{Width: width, Rows: []rowProps{row}})[0]
 		if strings.ContainsAny(line, "\x1b\n\r\t") {
 			t.Fatalf("width %d left terminal controls in %q", width, line)
 		}

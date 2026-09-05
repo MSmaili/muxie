@@ -4,45 +4,45 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MSmaili/hetki/internal/tui/core"
+	ui "github.com/MSmaili/hetki/internal/tui"
 )
 
-func contextualMenu(item liveItem) (core.ItemMenu, error) {
-	title, openLabel, renameLabel, deleteLabel := "", "", "", ""
+func contextualMenu(item liveItem) (ui.ItemMenu, error) {
+	title, openLabel := "", ""
 	switch item.Kind {
 	case liveSession:
-		title, openLabel, renameLabel, deleteLabel = "SESSION ACTIONS", "Open session", "Rename session", "Delete session"
+		title, openLabel = "SESSION ACTIONS", "Open session"
 	case liveWindow:
-		title, openLabel, renameLabel, deleteLabel = "WINDOW ACTIONS", "Open window", "Rename window", "Delete window"
+		title, openLabel = "WINDOW ACTIONS", "Open window"
 	case liveDestination:
-		title, openLabel, renameLabel, deleteLabel = "DESTINATION ACTIONS", "Open destination", "Rename window", "Delete window"
+		title, openLabel = "DESTINATION ACTIONS", "Open destination"
 	default:
-		return core.ItemMenu{}, fmt.Errorf("item %q has an unknown kind", item.ID)
+		return ui.ItemMenu{}, fmt.Errorf("item %q has an unknown kind", item.ID)
 	}
 
-	entries := make([]core.MenuEntry, 0, 9)
+	entries := make([]ui.MenuEntry, 0, 9)
 	if strings.TrimSpace(item.Target) != "" {
-		entries = append(entries, core.MenuEntry{Action: core.ActionOpen, Label: openLabel, Activation: 'o'})
+		entries = append(entries, ui.MenuEntry{Action: ui.ActionOpen, Label: openLabel})
 	}
-	entries = append(entries, core.MenuEntry{Action: core.ActionCreateSession, Label: "New session", Activation: 's'})
+	if item.Kind != liveSession && strings.TrimSpace(item.MutationTarget) != "" {
+		entries = append(entries, ui.MenuEntry{Action: ui.ActionRename, Label: "Rename window"})
+	}
 	if strings.TrimSpace(item.SessionTarget) != "" {
-		entries = append(entries, core.MenuEntry{Action: core.ActionCreateWindow, Label: "New window", Activation: 'w'})
-	}
-	if strings.TrimSpace(item.MutationTarget) != "" {
 		entries = append(entries,
-			core.MenuEntry{Action: core.ActionRename, Label: renameLabel, Activation: 'r'},
-			core.MenuEntry{Action: core.ActionDelete, Label: deleteLabel, Activation: 'd'},
+			ui.MenuEntry{Action: ui.ActionRenameSession, Label: "Rename session"},
+			ui.MenuEntry{Action: ui.ActionCreateWindow, Label: "New window"},
 		)
 	}
-	if item.Kind == liveDestination && strings.TrimSpace(item.SessionTarget) != "" {
-		entries = append(entries,
-			core.MenuEntry{Action: core.ActionRenameSession, Label: "Rename session", Activation: 'n'},
-			core.MenuEntry{Action: core.ActionDeleteSession, Label: "Delete session", Activation: 'x'},
-		)
+	entries = append(entries, ui.MenuEntry{Action: ui.ActionCreateSession, Label: "New session"})
+	if item.Kind != liveSession && strings.TrimSpace(item.MutationTarget) != "" {
+		entries = append(entries, ui.MenuEntry{Action: ui.ActionDelete, Label: "Delete window"})
+	}
+	if strings.TrimSpace(item.SessionTarget) != "" {
+		entries = append(entries, ui.MenuEntry{Action: ui.ActionDeleteSession, Label: "Delete session"})
 	}
 	entries = append(entries,
-		core.MenuEntry{Action: core.ActionRefresh, Label: "Refresh", Activation: 'f'},
-		core.MenuEntry{Action: core.ActionToggleProjection, Label: "Toggle projection", Activation: 't'},
+		ui.MenuEntry{Action: ui.ActionRefresh, Label: "Refresh"},
+		ui.MenuEntry{Action: ui.ActionToggleProjection, Label: "Toggle projection"},
 	)
-	return core.ItemMenu{Title: title, Entries: entries}, nil
+	return ui.ItemMenu{Title: title, Entries: entries}, nil
 }

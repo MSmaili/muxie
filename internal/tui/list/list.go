@@ -131,6 +131,24 @@ func (m *Model) Select(id ItemID) bool {
 	return true
 }
 
+func (m *Model) SelectSurvivor(previous []ItemID, anchor ItemID) bool {
+	position := slices.Index(previous, anchor)
+	if position < 0 {
+		return false
+	}
+	for _, id := range previous[position+1:] {
+		if m.Select(id) {
+			return true
+		}
+	}
+	for i := position - 1; i >= 0; i-- {
+		if m.Select(previous[i]) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Model) ToggleSelected(expand bool) bool {
 	selected, ok := m.Selected()
 	if !ok || !selected.Branch || strings.TrimSpace(m.query) != "" {

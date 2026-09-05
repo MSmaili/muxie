@@ -1,4 +1,4 @@
-package core
+package tui
 
 import (
 	"fmt"
@@ -8,20 +8,7 @@ import (
 	"github.com/MSmaili/hetki/internal/terminal"
 )
 
-type TreeStyles struct {
-	Meta              lipgloss.Style
-	Row               lipgloss.Style
-	RootRow           lipgloss.Style
-	ChildRow          lipgloss.Style
-	Secondary         lipgloss.Style
-	SecondarySelected lipgloss.Style
-	ActiveRow         lipgloss.Style
-	SelectedRow       lipgloss.Style
-	JumpLabel         lipgloss.Style
-	Rail              lipgloss.Style
-}
-
-type TreeRowProps struct {
+type rowProps struct {
 	ItemID     string
 	Primary    string
 	Secondary  string
@@ -34,24 +21,24 @@ type TreeRowProps struct {
 	Selected   bool
 }
 
-type TreeProps struct {
+type listProps struct {
 	Width     int
 	EmptyText string
-	Rows      []TreeRowProps
+	Rows      []rowProps
 	Compact   bool
-	Styles    TreeStyles
+	Theme     theme
 }
 
-func RenderTree(props TreeProps) []string {
+func renderList(props listProps) []string {
 	if len(props.Rows) == 0 {
-		return []string{props.Styles.Meta.Render(truncateWidth(props.EmptyText, props.Width))}
+		return []string{props.Theme.meta.Render(truncateWidth(props.EmptyText, props.Width))}
 	}
 	left := make([]string, len(props.Rows))
 	columnWidth := 0
 	secondaryWidth := 0
 	alignSecondary := false
 	for i, row := range props.Rows {
-		left[i] = renderRowLine(row, props.Styles, props.Compact)
+		left[i] = renderRowLine(row, props.Theme, props.Compact)
 		columnWidth = max(columnWidth, terminal.Width(left[i]))
 		secondaryWidth = max(secondaryWidth, terminal.Width(strings.TrimSpace(terminal.Sanitize(row.Secondary))))
 		alignSecondary = alignSecondary || (row.Depth == 0 && strings.TrimSpace(row.Secondary) != "")
@@ -64,19 +51,23 @@ func RenderTree(props TreeProps) []string {
 	}
 	lines := make([]string, 0, len(props.Rows))
 	for i, row := range props.Rows {
-		line := composeRowLine(row, left[i], columnWidth, props.Width, props.Compact, alignSecondary, props.Styles)
-		lines = append(lines, styleRowLine(row, line, props.Width, props.Styles))
+		line := composeRowLine(row, left[i], columnWidth, props.Width, props.Compact, alignSecondary, props.Theme)
+		lines = append(lines, styleRowLine(row, line, props.Width, props.Theme))
 	}
 	return lines
 }
 
-func composeRowLine(row TreeRowProps, left string, columnWidth, width int, compact, alignSecondary bool, styles TreeStyles) string {
+func composeRowLine(row rowProps, left string, columnWidth, width int, compact, alignSecondary bool, styles theme) string {
 	secondary := strings.TrimSpace(terminal.Sanitize(row.Secondary))
 	if (compact && !alignSecondary) || secondary == "" {
 		return truncateWidth(left, width)
 	}
 	const gap = 2
 	const minSecondaryWidth = 6
+	secondaryStyle := styles.secondary
+	if row.Selected {
+		secondaryStyle = styles.secondarySelected
+	}
 	leftWidth := terminal.Width(left)
 	if !alignSecondary {
 		available := width - leftWidth - gap
@@ -85,12 +76,7 @@ func composeRowLine(row TreeRowProps, left string, columnWidth, width int, compa
 		}
 		shortened := shortenPath(secondary, available)
 		padding := max(gap, width-leftWidth-terminal.Width(shortened))
-		if row.Selected {
-			shortened = styles.SecondarySelected.Render(shortened)
-		} else {
-			shortened = styles.Secondary.Render(shortened)
-		}
-		return left + strings.Repeat(" ", padding) + shortened
+		return left + strings.Repeat(" ", padding) + secondaryStyle.Render(shortened)
 	}
 	if width < gap+minSecondaryWidth {
 		return truncateWidth(left, width)
@@ -101,12 +87,7 @@ func composeRowLine(row TreeRowProps, left string, columnWidth, width int, compa
 	available := width - leftBudget - gap
 	shortened := shortenPath(secondary, available)
 	padding := leftBudget - leftWidth + gap
-	if row.Selected {
-		shortened = styles.SecondarySelected.Render(shortened)
-	} else {
-		shortened = styles.Secondary.Render(shortened)
-	}
-	return left + strings.Repeat(" ", padding) + shortened
+	return left + strings.Repeat(" ", padding) + secondaryStyle.Render(shortened)
 }
 
 func shortenPath(path string, maxWidth int) string {
@@ -152,7 +133,7 @@ func shortenPath(path string, maxWidth int) string {
 	return terminal.Cut(path, 0, headWidth) + ellipsis + terminal.Cut(path, pathWidth-tailWidth, pathWidth)
 }
 
-func renderRowLine(row TreeRowProps, styles TreeStyles, compact bool) string {
+func renderRowLine(row rowProps, styles theme, compact bool) string {
 	indicator := " "
 	if row.Active {
 		indicator = "│"
@@ -164,25 +145,20 @@ func renderRowLine(row TreeRowProps, styles TreeStyles, compact bool) string {
 	return strings.Join(append(parts, decoratedLabel(row, styles, compact)), " ")
 }
 
-func styleRowLine(row TreeRowProps, line string, width int, styles TreeStyles) string {
-	style := styles.Row
-	switch {
-	case row.Active:
-		style = styles.ActiveRow
-	case row.Depth == 0 && row.Branch:
-		style = styles.RootRow
-	case row.Depth > 0:
-		style = styles.ChildRow
+func styleRowLine(row rowProps, line string, width int, styles theme) string {
+	style := styles.row
+	if row.Active {
+		style = styles.activeRow
 	}
 	if row.Selected {
-		return styles.SelectedRow.Inherit(style).Width(width).Render(line)
+		return styles.selectedRow.Inherit(style).Width(width).Render(line)
 	}
 	rendered := style.Render(line)
 	jumpLabel := displayJumpLabel(row.JumpLabel)
 	if jumpLabel == "" || width <= 2 {
 		return rendered
 	}
-	badge := terminal.Cut(styles.JumpLabel.Render(jumpLabel), 0, width-2)
+	badge := terminal.Cut(styles.jumpLabel.Render(jumpLabel), 0, width-2)
 	return lipgloss.NewCompositor(
 		lipgloss.NewLayer(rendered),
 		lipgloss.NewLayer(badge).X(2).Z(1),
@@ -190,14 +166,10 @@ func styleRowLine(row TreeRowProps, line string, width int, styles TreeStyles) s
 }
 
 func displayJumpLabel(label string) string {
-	label = strings.TrimSpace(terminal.Sanitize(label))
-	if label == "" {
-		return ""
-	}
-	return label
+	return strings.TrimSpace(terminal.Sanitize(label))
 }
 
-func decoratedLabel(row TreeRowProps, styles TreeStyles, compact bool) string {
+func decoratedLabel(row rowProps, styles theme, compact bool) string {
 	primary := strings.TrimSpace(terminal.Sanitize(row.Primary))
 	if primary == "" {
 		primary = terminal.Sanitize(row.ItemID)
@@ -208,8 +180,8 @@ func decoratedLabel(row TreeRowProps, styles TreeStyles, compact bool) string {
 	prefix := row.TreePrefix
 	branch := branchGlyph(row)
 	if !row.Selected {
-		prefix = styles.Rail.Render(prefix)
-		branch = styles.Rail.Render(branch)
+		prefix = styles.rail.Render(prefix)
+		branch = styles.rail.Render(branch)
 	}
 	if row.Depth == 0 {
 		if !row.Branch {
@@ -220,7 +192,7 @@ func decoratedLabel(row TreeRowProps, styles TreeStyles, compact bool) string {
 	return fmt.Sprintf("  %s%s", prefix, primary)
 }
 
-func branchGlyph(row TreeRowProps) string {
+func branchGlyph(row rowProps) string {
 	if !row.Branch {
 		return "  "
 	}

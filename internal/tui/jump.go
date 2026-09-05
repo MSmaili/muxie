@@ -1,6 +1,11 @@
-package core
+package tui
 
-import "github.com/MSmaili/hetki/internal/tui/list"
+import (
+	"fmt"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/MSmaili/hetki/internal/tui/list"
+)
 
 const jumpAlphabet = "asdfghjkl;qwertyuiopzxcvbnm"
 
@@ -80,4 +85,69 @@ func (j *jumpState) enter(text string) (list.ItemID, bool, bool) {
 	}
 	j.input = ""
 	return "", false, false
+}
+
+func (m model) updateJumpMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case m.keys.Matches(KeyModeJump, ActionCancel, msg):
+		m.cancelJump()
+		return m, nil
+	case m.keys.Matches(KeyModeJump, ActionMoveUp, msg):
+		m.moveJump(-1)
+		return m, nil
+	case m.keys.Matches(KeyModeJump, ActionMoveDown, msg):
+		m.moveJump(1)
+		return m, nil
+	case m.keys.Matches(KeyModeJump, ActionFilter, msg):
+		m.cancelJump()
+		m.mode = modeFilter
+		return m, nil
+	case m.keys.Matches(KeyModeJump, ActionToggleProjection, msg):
+		return m.startProjectionToggle()
+	}
+	if msg.Text == "" {
+		return m, nil
+	}
+	attempt := m.jump.input + msg.Text
+	itemID, complete, valid := m.jump.enter(msg.Text)
+	if !valid {
+		m.err = fmt.Errorf("invalid jump label %q", attempt)
+		return m, nil
+	}
+	m.err = nil
+	if !complete {
+		return m, nil
+	}
+	m.mode = modeBrowse
+	m.jump = jumpState{}
+	return m.startAction(ActionOpen, itemID)
+}
+
+func (m *model) moveJump(delta int) {
+	m.jump.input = ""
+	m.err = nil
+	selected, ok := m.items.Selected()
+	if !ok {
+		return
+	}
+	target, ok := m.jump.neighbor(selected.Item.ID, delta)
+	if ok {
+		m.items.Select(target)
+	}
+}
+
+func (m *model) startInitialJump() {
+	if !m.initialJump {
+		return
+	}
+	m.initialJump = false
+	m.mode = modeJump
+	m.jump = newJumpState(m.items.VisibleRows())
+}
+
+func (m *model) cancelJump() {
+	m.mode = modeBrowse
+	m.jump = jumpState{}
+	m.initialJump = false
+	m.err = nil
 }

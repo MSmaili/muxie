@@ -1,4 +1,4 @@
-package core
+package tui
 
 import (
 	"testing"
@@ -16,7 +16,7 @@ func TestHeaderShowsNonFatalSnapshotNotice(t *testing.T) {
 }
 
 func TestHeaderTracksMode(t *testing.T) {
-	m := model{}
+	m := model{keys: DefaultKeyMap()}
 	for _, tt := range []struct {
 		mode       uiMode
 		wantPrompt string
@@ -36,6 +36,38 @@ func TestHeaderTracksMode(t *testing.T) {
 	m.mode = modeFilter
 	m.items.SetQuery("dev")
 	require.Empty(t, headerHint(m))
+}
+
+func TestHeaderHintsFollowInjectedKeymap(t *testing.T) {
+	keys, err := ResolveKeyMap(map[KeyMode][]Binding{
+		KeyModeNormal: {
+			{Action: ActionFilter, Keys: []string{"ctrl+f"}},
+			{Action: ActionJump, Keys: []string{"ctrl+j"}},
+		},
+		KeyModeJump: {
+			{Action: ActionFilter, Keys: []string{"ctrl+f"}},
+			{Action: ActionJump, Keys: []string{"ctrl+j"}}, // Unhandled here: must not become a hint.
+		},
+	})
+	require.NoError(t, err)
+	m, err := newModelWithKeys(viewSnapshot(), nil, keys)
+	require.NoError(t, err)
+	m = browseModel(m)
+	m.width, m.height = 120, 20
+	m = m.reflow()
+	require.Equal(t, "press ctrl+f to filter or ctrl+j to jump", headerHint(m))
+	require.Contains(t, m.View().Content, headerHint(m))
+
+	m, _ = updateModel(t, m, controlKey('j'))
+	require.Equal(t, modeJump, m.mode)
+	require.Equal(t, "type a label to jump or ctrl+f to filter", headerHint(m))
+	m, _ = updateModel(t, m, controlKey('f'))
+	require.Equal(t, modeFilter, m.mode)
+	require.Empty(t, headerHint(m))
+
+	m.keys = KeyMap{}
+	m.mode = modeBrowse
+	require.Empty(t, headerHint(m), "do not advertise an unbound action")
 }
 
 func TestRootCountLabelShowsFilteredRootsOverTotal(t *testing.T) {

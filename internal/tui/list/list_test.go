@@ -189,6 +189,29 @@ func TestEmptyListUsesTheSameSafePipeline(t *testing.T) {
 	require.Zero(t, m.Offset())
 }
 
+func TestSelectSurvivorUsesTheOldRowOrderAroundTheAnchor(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		previous []ItemID
+		anchor   ItemID
+		current  Snapshot
+		want     ItemID
+		ok       bool
+	}{
+		{name: "next", previous: []ItemID{"one", "removed", "three"}, anchor: "removed", current: Snapshot{Items: []Item{item("one", "one", ""), item("three", "three", "")}}, want: "three", ok: true},
+		{name: "previous", previous: []ItemID{"one", "removed"}, anchor: "removed", current: Snapshot{Items: []Item{item("one", "one", "")}}, want: "one", ok: true},
+		{name: "skip other removed rows", previous: []ItemID{"one", "removed-a", "removed-b", "four"}, anchor: "removed-a", current: Snapshot{Items: []Item{item("one", "one", ""), item("four", "four", "")}}, want: "four", ok: true},
+		{name: "unknown anchor", previous: []ItemID{"one"}, anchor: "removed", current: Snapshot{Items: []Item{item("one", "one", "")}}, want: "one", ok: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m, err := New(test.current)
+			require.NoError(t, err)
+			require.Equal(t, test.ok, m.SelectSurvivor(test.previous, test.anchor))
+			require.Equal(t, test.want, selectedID(m))
+		})
+	}
+}
+
 func TestMatchNavigationUsesOnlyMatchingRows(t *testing.T) {
 	snapshot := Snapshot{Items: []Item{
 		item("first", "api one", ""),

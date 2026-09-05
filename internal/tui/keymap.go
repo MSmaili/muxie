@@ -1,4 +1,4 @@
-package core
+package tui
 
 import (
 	"fmt"
@@ -78,15 +78,17 @@ func DefaultKeyMap() KeyMap {
 			{Action: ActionPrevMatch, Keys: []string{"N"}},
 			{Action: ActionClearFilter, Keys: []string{"ctrl+l"}},
 			{Action: ActionContextMenu, Keys: []string{"ctrl+k"}},
-			{Action: ActionCreateSession, Keys: []string{"s"}},
+			{Action: ActionCreateSession, Keys: []string{"A"}},
 			{Action: ActionCreateWindow, Keys: []string{"a"}},
 			{Action: ActionRename, Keys: []string{"r"}},
+			{Action: ActionRenameSession, Keys: []string{"R"}},
 			{Action: ActionDelete, Keys: []string{"x"}},
+			{Action: ActionDeleteSession, Keys: []string{"X"}},
 			{Action: ActionExpand, Keys: []string{"right", "l"}},
 			{Action: ActionCollapse, Keys: []string{"left", "h"}},
 			{Action: ActionExpandAll, Keys: []string{"L"}},
 			{Action: ActionCollapseAll, Keys: []string{"H"}},
-			{Action: ActionRefresh, Keys: []string{"R"}},
+			{Action: ActionRefresh, Keys: []string{"ctrl+r"}},
 			{Action: ActionToggleProjection, Keys: []string{"tab"}},
 			{Action: ActionOpen, Keys: []string{"enter", "ctrl+y"}},
 		},
@@ -122,6 +124,7 @@ func DefaultKeyMap() KeyMap {
 			{Action: ActionConfirm, Keys: []string{"enter", "ctrl+y", "y", "Y"}},
 		},
 		KeyModeMenu: {
+			{Action: ActionOpen, Keys: []string{"o"}},
 			{Action: ActionCancel, Keys: []string{"esc"}},
 			{Action: ActionConfirm, Keys: []string{"enter", "ctrl+y"}},
 			{Action: ActionMoveUp, Keys: []string{"up", "k", "ctrl+p"}},
@@ -132,6 +135,14 @@ func DefaultKeyMap() KeyMap {
 		panic(err)
 	}
 	return keymap
+}
+
+// Menu item shortcuts inherit normal bindings; menu controls and Open are local.
+func (k KeyMap) menuMode(action ActionID) KeyMode {
+	if _, exists := k.bindings[KeyModeMenu][action]; exists {
+		return KeyModeMenu
+	}
+	return KeyModeNormal
 }
 
 func (k KeyMap) IsZero() bool { return k.bindings == nil }

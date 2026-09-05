@@ -1,4 +1,4 @@
-package core
+package tui
 
 import (
 	"context"
@@ -8,8 +8,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/MSmaili/hetki/internal/tui/list"
 )
-
-type DispatchFunc func(ActionRequest) (ActionResult, error)
 
 func Run(ctx context.Context, initial list.Snapshot, dispatch DispatchFunc) (BackendTarget, error) {
 	return RunWithKeyMap(ctx, initial, DefaultKeyMap(), dispatch)
@@ -32,11 +30,6 @@ func RunWithKeyMap(ctx context.Context, initial list.Snapshot, keys KeyMap, disp
 	return m.navigation, nil
 }
 
-type actionResultMsg struct {
-	result ActionResult
-	err    error
-}
-
 type uiMode string
 
 const (
@@ -47,31 +40,6 @@ const (
 	modeConfirm uiMode = "confirm"
 	modeMenu    uiMode = "menu"
 )
-
-type inputState struct {
-	Title        string
-	Prompt       string
-	Request      ActionRequest
-	Value        string
-	SubmitStatus string
-	ReturnMode   uiMode
-}
-
-type confirmState struct {
-	Title        string
-	Body         string
-	Request      ActionRequest
-	SubmitStatus string
-	ReturnMode   uiMode
-}
-
-type menuState struct {
-	Title      string
-	ItemID     list.ItemID
-	Entries    []MenuEntry
-	Cursor     int
-	ReturnMode uiMode
-}
 
 type model struct {
 	items       list.Model
@@ -99,7 +67,7 @@ type model struct {
 func newModel(snapshot list.Snapshot, dispatch DispatchFunc) model {
 	m, err := newModelWithKeys(snapshot, dispatch, DefaultKeyMap())
 	if err != nil {
-		return model{err: err, status: err.Error(), dispatch: dispatch, keys: DefaultKeyMap(), theme: defaultTheme()}
+		return model{err: err, dispatch: dispatch, keys: DefaultKeyMap(), theme: defaultTheme()}
 	}
 	return m
 }
@@ -159,8 +127,3 @@ func (m model) layout() layoutMetrics {
 func (m model) availableListHeight() int { return m.layout().middleHeight }
 
 func (m model) selectedRow() (list.Row, bool) { return m.items.Selected() }
-
-func cloneRequest(request ActionRequest) *ActionRequest {
-	cloned := request
-	return &cloned
-}

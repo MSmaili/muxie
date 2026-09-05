@@ -1,29 +1,25 @@
-package core
+package tui
 
 import (
-	"fmt"
+	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/MSmaili/hetki/internal/terminal"
 )
 
-type MenuProps struct {
-	LineWidth     int
-	MaxHeight     int
-	Title         string
-	Entries       []MenuEntry
-	Selected      int
-	Hint          string
-	ModalStyle    lipgloss.Style
-	TitleStyle    lipgloss.Style
-	EntryStyle    lipgloss.Style
-	KeyStyle      lipgloss.Style
-	SelectedStyle lipgloss.Style
-	HintStyle     lipgloss.Style
+type menuProps struct {
+	LineWidth int
+	MaxHeight int
+	Title     string
+	Entries   []MenuEntry
+	Selected  int
+	Hint      string
+	Keys      KeyMap
+	Theme     theme
 }
 
-func RenderMenu(props MenuProps) string {
-	style := props.ModalStyle
+func renderMenu(props menuProps) string {
+	style := props.Theme.modal
 	entries, selected := props.Entries, props.Selected
 	showTitle, showHint := true, true
 	if props.MaxHeight > 0 {
@@ -45,19 +41,22 @@ func RenderMenu(props MenuProps) string {
 
 	lines := make([]string, 0, len(entries)+2)
 	if showTitle {
-		lines = append(lines, props.TitleStyle.Render(terminal.Sanitize(props.Title)))
+		lines = append(lines, props.Theme.modalTitle.Render(terminal.Sanitize(props.Title)))
 	}
 	for i, entry := range entries {
-		key := fmt.Sprintf("‹%c›", entry.Activation)
+		key := ""
+		if bound := props.Keys.Keys(props.Keys.menuMode(entry.Action), entry.Action); len(bound) > 0 {
+			key = "‹" + terminal.Sanitize(strings.Join(bound, "/")) + "› "
+		}
 		label := terminal.Sanitize(entry.Label)
 		if i == selected {
-			lines = append(lines, props.SelectedStyle.Render(key+" "+label))
+			lines = append(lines, props.Theme.selectedRow.Render(key+label))
 			continue
 		}
-		lines = append(lines, props.KeyStyle.Render(key)+" "+props.EntryStyle.Render(label))
+		lines = append(lines, props.Theme.jumpLabel.Render(key)+props.Theme.row.Render(label))
 	}
 	if showHint {
-		lines = append(lines, props.HintStyle.Render(terminal.Sanitize(props.Hint)))
+		lines = append(lines, props.Theme.modalHint.Render(terminal.Sanitize(props.Hint)))
 	}
 	return renderBox(lines, props.LineWidth, 48, style)
 }

@@ -1,4 +1,4 @@
-package core
+package tui
 
 import (
 	"fmt"
@@ -10,66 +10,13 @@ import (
 )
 
 func (m model) View() tea.View {
-	t := m.theme
 	layout := m.layout()
-	lineWidth, innerW := layout.lineWidth, layout.innerWidth
+	header := m.viewHeader(layout.innerWidth)
+	middle := lipgloss.PlaceVertical(layout.middleHeight, lipgloss.Top, m.viewList(layout))
+	rendered := layout.frameStyle.Width(layout.lineWidth).Render(lipgloss.JoinVertical(lipgloss.Left, header, middle))
 
-	contentLines := []string{
-		RenderSearchBar(SearchBarProps{
-			Width: innerW, Filter: m.items.Query(), Hint: headerHint(m), Right: headerRight(m),
-			Prompt: headerPrompt(m), Active: m.mode == modeFilter,
-			Style: t.searchBox, PromptStyle: t.searchPrompt, HintStyle: t.headerHint, MetaStyle: t.meta,
-		}),
-		t.sectionLine.Render(strings.Repeat("─", innerW)),
-	}
-
-	rows := m.items.VisibleRows()
-	visibleRows := make([]TreeRowProps, 0, len(rows))
-	for i, row := range rows {
-		visibleRows = append(visibleRows, TreeRowProps{
-			ItemID: string(row.Item.ID), Primary: row.Item.Primary, Secondary: row.Item.Secondary,
-			JumpLabel: m.jumpLabel(row.Item.ID),
-			Depth:     row.Depth, TreePrefix: row.TreePrefix, Expanded: row.Expanded, Branch: row.Branch,
-			Active: m.items.IsActive(row.Item.ID), Selected: m.items.Offset()+i == m.items.Cursor(),
-		})
-	}
-	rowLines := RenderTree(TreeProps{
-		Width: innerW, EmptyText: emptyStateText(m), Rows: visibleRows, Compact: layout.compact,
-		Styles: TreeStyles{
-			Meta: t.meta, Row: t.row, RootRow: t.rootRow, ChildRow: t.childRow,
-			Secondary: t.secondary, SecondarySelected: t.secondarySelected, ActiveRow: t.activeRow,
-			SelectedRow: t.selectedRow, JumpLabel: t.jumpLabel, Rail: t.rail,
-		},
-	})
-
-	header := strings.Join(contentLines, "\n")
-	middle := lipgloss.PlaceVertical(layout.middleHeight, lipgloss.Top, strings.Join(rowLines, "\n"))
-	rendered := layout.frameStyle.Width(lineWidth).Render(lipgloss.JoinVertical(lipgloss.Left, header, middle))
-
-	var overlay string
-	switch m.mode {
-	case modeMenu:
-		overlay = RenderMenu(MenuProps{
-			LineWidth: lineWidth, MaxHeight: lipgloss.Height(rendered),
-			Title: m.menu.Title, Entries: m.menu.Entries, Selected: m.menu.Cursor,
-			Hint: menuControls(m.keys), ModalStyle: t.modal, TitleStyle: t.modalTitle,
-			EntryStyle: t.row, KeyStyle: t.jumpLabel, SelectedStyle: t.selectedRow, HintStyle: t.modalHint,
-		})
-	case modeInput:
-		overlay = RenderInputModal(InputModalProps{
-			LineWidth: lineWidth, Title: m.input.Title, Prompt: m.input.Prompt, Value: m.input.Value,
-			Hint:       modalControls(m.keys, KeyModeInput, "submit"),
-			ModalStyle: t.modal, TitleStyle: t.modalTitle, HintStyle: t.modalHint,
-		})
-	case modeConfirm:
-		overlay = RenderConfirmModal(ConfirmModalProps{
-			LineWidth: lineWidth, Title: m.confirm.Title, Body: m.confirm.Body,
-			Hint:       modalControls(m.keys, KeyModeConfirm, "confirm"),
-			ModalStyle: t.modal, TitleStyle: t.modalTitle, HintStyle: t.modalHint,
-		})
-	}
-	if overlay != "" {
-		x := max(0, (lineWidth-lipgloss.Width(overlay))/2)
+	if overlay := m.viewOverlay(layout.lineWidth, lipgloss.Height(rendered)); overlay != "" {
+		x := max(0, (layout.lineWidth-lipgloss.Width(overlay))/2)
 		y := max(0, (lipgloss.Height(rendered)-lipgloss.Height(overlay))/2)
 		rendered = lipgloss.NewCompositor(
 			lipgloss.NewLayer(rendered),
@@ -80,6 +27,56 @@ func (m model) View() tea.View {
 	view := tea.NewView(rendered)
 	view.AltScreen = true
 	return view
+}
+
+func (m model) viewHeader(width int) string {
+	return renderSearchBar(searchBarProps{
+		Width: width, Filter: m.items.Query(), Hint: headerHint(m), Right: headerRight(m),
+		Prompt: headerPrompt(m), Active: m.mode == modeFilter, Theme: m.theme,
+	}) + "\n" + m.theme.sectionLine.Render(strings.Repeat("─", width))
+}
+
+func (m model) viewList(layout layoutMetrics) string {
+	rows := m.items.VisibleRows()
+	visibleRows := make([]rowProps, 0, len(rows))
+	for i, row := range rows {
+		visibleRows = append(visibleRows, rowProps{
+			ItemID: string(row.Item.ID), Primary: row.Item.Primary, Secondary: row.Item.Secondary,
+			JumpLabel: m.jumpLabel(row.Item.ID),
+			Depth:     row.Depth, TreePrefix: row.TreePrefix, Expanded: row.Expanded, Branch: row.Branch,
+			Active: m.items.IsActive(row.Item.ID), Selected: m.items.Offset()+i == m.items.Cursor(),
+		})
+	}
+	return strings.Join(renderList(listProps{
+		Width: layout.innerWidth, EmptyText: emptyStateText(m), Rows: visibleRows,
+		Compact: layout.compact, Theme: m.theme,
+	}), "\n")
+}
+
+func (m model) viewOverlay(width, height int) string {
+	switch m.mode {
+	case modeMenu:
+		return renderMenu(menuProps{
+			LineWidth: width, MaxHeight: height, Title: m.menu.Title,
+			Entries: m.menu.Entries, Selected: m.menu.Cursor, Hint: menuControls(m.keys), Keys: m.keys, Theme: m.theme,
+		})
+	case modeInput:
+		prompt := m.input.Prompt
+		if m.err != nil {
+			prompt = m.err.Error()
+		}
+		return renderInputModal(inputModalProps{
+			LineWidth: width, Title: m.input.Title, Prompt: prompt, Value: m.input.Value,
+			Hint: modalControls(m.keys, KeyModeInput, "submit"), Theme: m.theme,
+		})
+	case modeConfirm:
+		return renderConfirmModal(confirmModalProps{
+			LineWidth: width, Title: m.confirm.Title, Body: m.confirm.Body,
+			Hint: modalControls(m.keys, KeyModeConfirm, "confirm"), Theme: m.theme,
+		})
+	default:
+		return ""
+	}
 }
 
 func (m model) jumpLabel(id list.ItemID) string {
@@ -130,14 +127,32 @@ func headerPrompt(m model) string {
 }
 
 func headerHint(m model) string {
-	switch m.mode {
-	case modeBrowse:
-		return "press / to filter or ; to jump"
-	case modeJump:
-		return "type a label to jump or / to filter"
-	default:
+	if m.mode == modeJump {
+		hint := "type a label to jump"
+		if bound := m.keys.Keys(KeyModeJump, ActionFilter); len(bound) > 0 {
+			hint += " or " + bound[0] + " to filter"
+		}
+		return hint
+	}
+	if m.mode != modeBrowse {
 		return ""
 	}
+	var parts []string
+	for _, control := range []struct {
+		action ActionID
+		label  string
+	}{
+		{ActionFilter, "filter"},
+		{ActionJump, "jump"},
+	} {
+		if bound := m.keys.Keys(KeyModeNormal, control.action); len(bound) > 0 {
+			parts = append(parts, bound[0]+" to "+control.label)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "press " + strings.Join(parts, " or ")
 }
 
 func headerRight(m model) string {
