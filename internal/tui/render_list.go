@@ -142,16 +142,13 @@ func renderRowLine(row rowProps, styles theme, compact bool) string {
 	if jumpLabel := displayJumpLabel(row.JumpLabel); jumpLabel != "" {
 		parts = append(parts, jumpLabel)
 	}
-	return strings.Join(append(parts, decoratedLabel(row, styles, compact)), " ")
+	return strings.Join(append(parts, decoratedLabel(row, compact)), " ")
 }
 
 func styleRowLine(row rowProps, line string, width int, styles theme) string {
-	style := styles.row
-	if row.Active {
-		style = styles.activeRow
-	}
+	style := styles.itemStyle(row.Active, row.Selected)
 	if row.Selected {
-		return styles.selectedRow.Inherit(style).Width(width).Render(line)
+		return style.Width(width).Render(line)
 	}
 	rendered := style.Render(line)
 	jumpLabel := displayJumpLabel(row.JumpLabel)
@@ -169,7 +166,7 @@ func displayJumpLabel(label string) string {
 	return strings.TrimSpace(terminal.Sanitize(label))
 }
 
-func decoratedLabel(row rowProps, styles theme, compact bool) string {
+func decoratedLabel(row rowProps, compact bool) string {
 	primary := strings.TrimSpace(terminal.Sanitize(row.Primary))
 	if primary == "" {
 		primary = terminal.Sanitize(row.ItemID)
@@ -179,10 +176,6 @@ func decoratedLabel(row rowProps, styles theme, compact bool) string {
 	}
 	prefix := row.TreePrefix
 	branch := branchGlyph(row)
-	if !row.Selected {
-		prefix = styles.rail.Render(prefix)
-		branch = styles.rail.Render(branch)
-	}
 	if row.Depth == 0 {
 		if !row.Branch {
 			return primary

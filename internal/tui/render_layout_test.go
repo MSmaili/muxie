@@ -41,6 +41,19 @@ func TestSearchBarRendersModeAppropriateContent(t *testing.T) {
 	}
 }
 
+func TestMenuUsesSharedItemSelectionColors(t *testing.T) {
+	styles := defaultTheme()
+	menu := renderMenu(menuProps{
+		LineWidth: 80,
+		Entries:   []MenuEntry{{Action: ActionOpen, Label: "Open destination"}},
+		Keys:      DefaultKeyMap(),
+		Theme:     styles,
+	})
+	if selected := styles.itemStyle(false, true).Render("‹o› Open destination"); !strings.Contains(menu, selected) {
+		t.Fatalf("selected menu entry did not use the list selection colors: %q", menu)
+	}
+}
+
 func TestHeadersAndModalsSanitizeAndFit(t *testing.T) {
 	unsafe := "中👨‍👩‍👧é\x1b]0;owned\a\nnext"
 	border := lipgloss.NewStyle().Border(lipgloss.RoundedBorder())

@@ -124,11 +124,11 @@ func TestRenderListDefaultThemeStylesEveryRowShapeTheSame(t *testing.T) {
 		{name: "flat", row: rowProps{Primary: "flat"}, normal: "  flat", active: "│ flat", selected: "  flat"},
 		{
 			name: "tree root", row: rowProps{Primary: "root", Branch: true},
-			normal: "  " + theme.rail.Render("\uf0da ") + "root", active: "│ " + theme.rail.Render("\uf0da ") + "root", selected: "  \uf0da root",
+			normal: "  \uf0da root", active: "│ \uf0da root", selected: "  \uf0da root",
 		},
 		{
 			name: "tree child", row: rowProps{Primary: "child", Depth: 1, TreePrefix: "└─ "},
-			normal: "    " + theme.rail.Render("└─ ") + "child", active: "│   " + theme.rail.Render("└─ ") + "child", selected: "    └─ child",
+			normal: "    └─ child", active: "│   └─ child", selected: "    └─ child",
 		},
 	}
 	for _, shape := range shapes {

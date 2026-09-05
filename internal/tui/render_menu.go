@@ -50,7 +50,7 @@ func renderMenu(props menuProps) string {
 		}
 		label := terminal.Sanitize(entry.Label)
 		if i == selected {
-			lines = append(lines, props.Theme.selectedRow.Render(key+label))
+			lines = append(lines, props.Theme.itemStyle(false, true).Render(key+label))
 			continue
 		}
 		lines = append(lines, props.Theme.jumpLabel.Render(key)+props.Theme.row.Render(label))
