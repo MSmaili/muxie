@@ -33,28 +33,41 @@ func TestRunRejectsInvalidInitialProjectionBeforeStartingTea(t *testing.T) {
 	}
 }
 
-func TestModelStartsInJumpUnlessTheProjectionIsEmpty(t *testing.T) {
-	m := newModel(viewSnapshot(), nil)
-	if m.mode != modeBrowse || !m.initialJump || len(m.jump.candidates) != 0 {
-		t.Fatalf("non-empty startup was not waiting for its first layout: mode=%q pending=%t candidates=%d", m.mode, m.initialJump, len(m.jump.candidates))
-	}
-	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 40, Height: 8})
-	if m.mode != modeJump || len(m.jump.candidates) == 0 {
-		t.Fatalf("first layout canceled startup jump: mode=%q candidates=%d", m.mode, len(m.jump.candidates))
-	}
-	m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 41, Height: 8})
-	if m.mode != modeBrowse {
-		t.Fatalf("later resize kept stale jump labels: mode=%q", m.mode)
+func TestModelStartMode(t *testing.T) {
+	require.Equal(t, StartModeFilter, DefaultStartMode())
+	for _, test := range []struct {
+		startMode StartMode
+		wantMode  uiMode
+		jump      bool
+	}{
+		{startMode: StartModeNormal, wantMode: modeBrowse},
+		{startMode: StartModeFilter, wantMode: modeFilter},
+		{startMode: StartModeJump, wantMode: modeBrowse, jump: true},
+	} {
+		m, err := newModelWithStartMode(viewSnapshot(), nil, DefaultKeyMap(), test.startMode)
+		require.NoError(t, err)
+		require.Equal(t, test.wantMode, m.mode)
+		require.Equal(t, test.jump, m.initialJump)
+		if test.jump {
+			m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 40, Height: 8})
+			require.Equal(t, modeJump, m.mode)
+			require.NotEmpty(t, m.jump.candidates)
+			m, _ = updateModel(t, m, tea.WindowSizeMsg{Width: 41, Height: 8})
+			require.Equal(t, modeBrowse, m.mode)
+			require.Empty(t, m.jump.candidates)
+		}
 	}
 
-	empty := newModel(list.Snapshot{}, nil)
-	if empty.mode != modeBrowse || len(empty.jump.candidates) != 0 {
-		t.Fatalf("empty startup mode = %q with %d candidates, want normal", empty.mode, len(empty.jump.candidates))
-	}
+	empty, err := newModelWithStartMode(list.Snapshot{}, nil, DefaultKeyMap(), StartModeFilter)
+	require.NoError(t, err)
+	require.Equal(t, modeBrowse, empty.mode)
+
+	_, err = newModelWithStartMode(viewSnapshot(), nil, DefaultKeyMap(), StartMode("invalid"))
+	require.ErrorContains(t, err, "invalid start mode")
 }
 
 func TestViewKeepsSecondaryTextOnItsRowWithoutGlobalHelp(t *testing.T) {
-	m := newModel(viewSnapshot(), nil)
+	m := browseModel(newModel(viewSnapshot(), nil))
 	m.width, m.height = 80, 20
 	m = m.reflow()
 	content := m.View().Content
@@ -95,7 +108,6 @@ func TestContextMenuOverlaySanitizesAndFitsNarrowTerminals(t *testing.T) {
 	for _, width := range []int{1, 2, 3, 12, 24} {
 		m := newModel(viewSnapshot(), nil)
 		m.mode = modeMenu
-		m.initialJump = false
 		m.menu = menuState{Title: "WINDOW ACTIONS", Entries: []MenuEntry{{Action: ActionOpen, Label: unsafe}}}
 		m.width, m.height = width, 8
 		m = m.reflow()
@@ -126,7 +138,6 @@ func TestContextMenuViewportFitsAndCentersTheFullMenu(t *testing.T) {
 
 	short := newModel(viewSnapshot(), nil)
 	short.mode = modeMenu
-	short.initialJump = false
 	short.menu = menuState{Title: "DESTINATION ACTIONS", Entries: entries, Cursor: len(entries) - 1}
 	short.width = 24
 	var content string

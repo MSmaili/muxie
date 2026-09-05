@@ -65,12 +65,35 @@ func (d *blockingDriver) Execute(ctx context.Context, _ ui.ActionRequest) (ui.Ac
 
 func (d *blockingDriver) Navigate(context.Context, ui.BackendTarget) error { return nil }
 
+func TestServiceUsesConfiguredStartMode(t *testing.T) {
+	for _, test := range []struct {
+		configured ui.StartMode
+		want       ui.StartMode
+	}{
+		{want: ui.StartModeFilter},
+		{configured: ui.StartModeNormal, want: ui.StartModeNormal},
+		{configured: ui.StartModeJump, want: ui.StartModeJump},
+	} {
+		var got ui.StartMode
+		service := Service{
+			Driver:    &switchDriver{},
+			StartMode: test.configured,
+			RunUI: func(_ context.Context, _ list.Snapshot, _ ui.KeyMap, startMode ui.StartMode, _ ui.DispatchFunc) (ui.BackendTarget, error) {
+				got = startMode
+				return "", nil
+			},
+		}
+		require.NoError(t, service.Run(context.Background()))
+		require.Equal(t, test.want, got)
+	}
+}
+
 func TestUIExitCancelsAndJoinsBusyEffect(t *testing.T) {
 	driver := &blockingDriver{started: make(chan struct{}), stopped: make(chan struct{})}
 	dispatchDone := make(chan error, 1)
 	service := Service{
 		Driver: driver,
-		RunUI: func(_ context.Context, _ list.Snapshot, _ ui.KeyMap, dispatch ui.DispatchFunc) (ui.BackendTarget, error) {
+		RunUI: func(_ context.Context, _ list.Snapshot, _ ui.KeyMap, _ ui.StartMode, dispatch ui.DispatchFunc) (ui.BackendTarget, error) {
 			go func() {
 				_, err := dispatch(ui.ActionRequest{ActionID: ui.ActionCreateSession})
 				dispatchDone <- err
@@ -111,7 +134,7 @@ func TestRunPreservesParentCancellation(t *testing.T) {
 	started := make(chan struct{})
 	service := Service{
 		Driver: &switchDriver{},
-		RunUI: func(ctx context.Context, _ list.Snapshot, _ ui.KeyMap, _ ui.DispatchFunc) (ui.BackendTarget, error) {
+		RunUI: func(ctx context.Context, _ list.Snapshot, _ ui.KeyMap, _ ui.StartMode, _ ui.DispatchFunc) (ui.BackendTarget, error) {
 			close(started)
 			<-ctx.Done()
 			return "", tea.ErrProgramKilled
@@ -131,7 +154,7 @@ func TestPostExitNavigationUsesParentCancellation(t *testing.T) {
 	driver := &navigationDriver{started: make(chan struct{})}
 	service := Service{
 		Driver: driver,
-		RunUI: func(context.Context, list.Snapshot, ui.KeyMap, ui.DispatchFunc) (ui.BackendTarget, error) {
+		RunUI: func(context.Context, list.Snapshot, ui.KeyMap, ui.StartMode, ui.DispatchFunc) (ui.BackendTarget, error) {
 			return "dev", nil
 		},
 	}
@@ -149,7 +172,7 @@ func TestSuccessfulSwitchNavigatesAfterUIWithoutRefresh(t *testing.T) {
 	driver := &switchDriver{}
 	service := Service{
 		Driver: driver,
-		RunUI: func(_ context.Context, _ list.Snapshot, _ ui.KeyMap, dispatch ui.DispatchFunc) (ui.BackendTarget, error) {
+		RunUI: func(_ context.Context, _ list.Snapshot, _ ui.KeyMap, _ ui.StartMode, dispatch ui.DispatchFunc) (ui.BackendTarget, error) {
 			defer func() { driver.uiReturned = true }()
 			result, err := dispatch(ui.ActionRequest{ActionID: ui.ActionOpen, ItemID: "dev"})
 			return result.Navigation, err

@@ -54,7 +54,7 @@ func TestTerminalRestoredBeforeNavigation(t *testing.T) {
 			fmt.Println("RECORDED")
 			return nil
 		}}
-		require.NoError(t, (Service{Driver: driver, RunUI: ui.RunWithKeyMap}).Run(context.Background()))
+		require.NoError(t, (Service{Driver: driver, RunUI: ui.RunWithStartMode}).Run(context.Background()))
 		return
 	}
 
@@ -84,7 +84,7 @@ func TestTerminalRestoredBeforeNavigation(t *testing.T) {
 	cmd.Stdin = input
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-		_, _ = inputWriter.Write([]byte("a"))
+		_, _ = inputWriter.Write([]byte("\r"))
 		_ = inputWriter.Close()
 	}()
 	var output bytes.Buffer

@@ -14,7 +14,11 @@ func Run(ctx context.Context, initial list.Snapshot, dispatch DispatchFunc) (Bac
 }
 
 func RunWithKeyMap(ctx context.Context, initial list.Snapshot, keys KeyMap, dispatch DispatchFunc) (BackendTarget, error) {
-	m, err := newModelWithKeys(initial, dispatch, keys)
+	return RunWithStartMode(ctx, initial, keys, DefaultStartMode(), dispatch)
+}
+
+func RunWithStartMode(ctx context.Context, initial list.Snapshot, keys KeyMap, startMode StartMode, dispatch DispatchFunc) (BackendTarget, error) {
+	m, err := newModelWithStartMode(initial, dispatch, keys, startMode)
 	if err != nil {
 		return "", err
 	}
@@ -29,6 +33,16 @@ func RunWithKeyMap(ctx context.Context, initial list.Snapshot, keys KeyMap, disp
 	}
 	return m.navigation, nil
 }
+
+type StartMode string
+
+const (
+	StartModeNormal StartMode = "normal"
+	StartModeFilter StartMode = "filter"
+	StartModeJump   StartMode = "jump"
+)
+
+func DefaultStartMode() StartMode { return StartModeFilter }
 
 type uiMode string
 
@@ -73,6 +87,10 @@ func newModel(snapshot list.Snapshot, dispatch DispatchFunc) model {
 }
 
 func newModelWithKeys(snapshot list.Snapshot, dispatch DispatchFunc, keys KeyMap) (model, error) {
+	return newModelWithStartMode(snapshot, dispatch, keys, DefaultStartMode())
+}
+
+func newModelWithStartMode(snapshot list.Snapshot, dispatch DispatchFunc, keys KeyMap, startMode StartMode) (model, error) {
 	items, err := list.New(snapshot)
 	if err != nil {
 		return model{}, err
@@ -85,8 +103,16 @@ func newModelWithKeys(snapshot list.Snapshot, dispatch DispatchFunc, keys KeyMap
 		mode:     modeBrowse,
 	}
 	m = m.reflow()
-	if len(m.items.Rows()) > 0 {
-		m.initialJump = true
+	switch startMode {
+	case StartModeNormal:
+	case StartModeFilter:
+		if len(m.items.Rows()) > 0 {
+			m.mode = modeFilter
+		}
+	case StartModeJump:
+		m.initialJump = len(m.items.Rows()) > 0
+	default:
+		return model{}, fmt.Errorf("invalid start mode %q", startMode)
 	}
 	return m, nil
 }

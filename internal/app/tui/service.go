@@ -18,16 +18,22 @@ type Driver interface {
 	Navigate(context.Context, ui.BackendTarget) error
 }
 
-type RunUIFunc func(context.Context, list.Snapshot, ui.KeyMap, ui.DispatchFunc) (ui.BackendTarget, error)
+type RunUIFunc func(context.Context, list.Snapshot, ui.KeyMap, ui.StartMode, ui.DispatchFunc) (ui.BackendTarget, error)
 
 type Service struct {
-	Driver Driver
-	Keys   ui.KeyMap
-	RunUI  RunUIFunc
+	Driver    Driver
+	Keys      ui.KeyMap
+	StartMode ui.StartMode
+	RunUI     RunUIFunc
 }
 
 func NewService(detectBackend func(...string) (backend.Backend, error)) Service {
-	return Service{Driver: NewLiveAdapter(detectBackend), Keys: ui.DefaultKeyMap(), RunUI: ui.RunWithKeyMap}
+	return Service{
+		Driver:    NewLiveAdapter(detectBackend),
+		Keys:      ui.DefaultKeyMap(),
+		StartMode: ui.DefaultStartMode(),
+		RunUI:     ui.RunWithStartMode,
+	}
 }
 
 func (s Service) Run(ctx context.Context) error {
@@ -36,11 +42,15 @@ func (s Service) Run(ctx context.Context) error {
 	}
 	runUI := s.RunUI
 	if runUI == nil {
-		runUI = ui.RunWithKeyMap
+		runUI = ui.RunWithStartMode
 	}
 	keys := s.Keys
 	if keys.IsZero() {
 		keys = ui.DefaultKeyMap()
+	}
+	startMode := s.StartMode
+	if startMode == "" {
+		startMode = ui.DefaultStartMode()
 	}
 
 	effectsCtx, cancelEffects := context.WithCancel(ctx)
@@ -69,7 +79,7 @@ func (s Service) Run(ctx context.Context) error {
 		return s.Driver.Execute(effectsCtx, request)
 	}
 
-	navigation, err := runUI(effectsCtx, initial, keys, dispatch)
+	navigation, err := runUI(effectsCtx, initial, keys, startMode, dispatch)
 	effectsMu.Lock()
 	effectsClosed = true
 	cancelEffects()

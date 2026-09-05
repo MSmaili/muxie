@@ -45,8 +45,6 @@ func TestSemicolonIsFilterTextThenLabelsThePreservedResult(t *testing.T) {
 		SearchFields: []list.SearchField{{Tier: list.SearchPrimary, Text: "semi;colon"}},
 	}}}
 	m := newModel(snapshot, nil)
-	m, _ = updateModel(t, m, printableKey("/"))
-
 	m, _ = updateModel(t, m, printableKey(";"))
 	require.Equal(t, modeFilter, m.mode)
 	require.Equal(t, ";", m.items.Query())

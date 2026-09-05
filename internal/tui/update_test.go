@@ -71,9 +71,6 @@ func requireQuit(t *testing.T, cmd tea.Cmd) {
 
 func TestUpdateRoutesKeysByModeAndOverlay(t *testing.T) {
 	m := newModel(interactionSnapshot(), nil)
-	require.Equal(t, modeBrowse, m.mode)
-	require.True(t, m.initialJump)
-	m, _ = updateModel(t, m, printableKey("/"))
 	require.Equal(t, modeFilter, m.mode)
 
 	m, cmd := updateModel(t, m, printableKey("q"))
@@ -138,7 +135,6 @@ func TestEnterOpensSelectedItemFromFilter(t *testing.T) {
 		got = request
 		return ActionResult{}, nil
 	})
-	m, _ = updateModel(t, m, printableKey("/"))
 	m.items.SetQuery("server")
 	require.Equal(t, list.ItemID("window-2"), selectedNodeID(m))
 
