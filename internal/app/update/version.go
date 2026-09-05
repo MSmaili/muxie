@@ -175,16 +175,15 @@ func (v Version) String() string {
 
 // decideUpdate reports whether hetki should install targetTag over
 // currentTag (D4 policy). exact selects the target explicitly and permits
-// any direction including reinstalls; prerelease targets require
-// allowPrerelease in every mode; the default path only moves strictly
-// forward. Unparsable versions fail closed.
-func decideUpdate(currentTag, targetTag string, exact, allowPrerelease bool) (install bool, reason string, err error) {
+// any direction including reinstalls. Release targets must be stable;
+// the default path only moves strictly forward. Unparsable versions fail closed.
+func decideUpdate(currentTag, targetTag string, exact bool) (install bool, reason string, err error) {
 	target, err := ParseVersion(targetTag)
 	if err != nil {
 		return false, "", fmt.Errorf("target version rejected: %w", err)
 	}
-	if target.IsPrerelease() && !allowPrerelease {
-		return false, "", fmt.Errorf("target %s is a prerelease; pass --pre to opt in", targetTag)
+	if target.IsPrerelease() {
+		return false, "", fmt.Errorf("target %s is a prerelease; select a stable release or use --head for main", targetTag)
 	}
 	if exact {
 		return true, "explicit version selection", nil

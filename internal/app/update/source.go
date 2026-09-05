@@ -26,14 +26,17 @@ type GoUpdater struct {
 func (g *GoUpdater) Name() string { return "go install" }
 
 func (g *GoUpdater) DryRun(target Target) {
-	logger.Info("Would run: go install %s@%s and verify commit %s", modulePath, target.Tag, target.Commit)
+	ref := target.Tag
+	if ref == "" {
+		ref = target.Commit
+	}
+	logger.Info("Would run: go install %s@%s and verify commit %s", modulePath, ref, target.Commit)
 }
 
 func (g *GoUpdater) Update(ctx context.Context, target Target) error {
 	if err := g.validateUpdate(target); err != nil {
 		return err
 	}
-	version := target.Tag
 	buildCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	tempDir, err := os.MkdirTemp(filepath.Dir(g.exePath), ".hetki-source-*")
@@ -48,14 +51,20 @@ func (g *GoUpdater) Update(ctx context.Context, target Target) error {
 		<-monitorDone
 	}()
 
-	module := modulePath + "@" + version
+	ref := target.Tag
+	if ref == "" {
+		ref = target.Commit
+	}
+	module := modulePath + "@" + ref
 	modCache := filepath.Join(tempDir, "modcache")
 	if err := os.MkdirAll(filepath.Join(tempDir, "tmp"), 0700); err != nil {
 		return fmt.Errorf("creating source temporary directory: %w", err)
 	}
-	if err := verifySourceOrigin(sourceCtx, module, target, modCache); err != nil {
+	version, err := verifySourceOrigin(sourceCtx, module, target, modCache)
+	if err != nil {
 		return err
 	}
+	target.Tag = version
 	ldflags := fmt.Sprintf("-X %s/cmd.Version=%s -X %s/cmd.GitCommit=%s", modulePath, version, modulePath, target.Commit)
 	args := []string{"install", "-ldflags", ldflags}
 	if g.Verbose {
@@ -98,11 +107,10 @@ func (g *GoUpdater) Update(ctx context.Context, target Target) error {
 }
 
 func (g *GoUpdater) validateUpdate(target Target) error {
-	if target.Tag == "" {
-		return errors.New("no exact release tag resolved; refusing mutable module ref")
-	}
-	if _, err := ParseVersion(target.Tag); err != nil {
-		return fmt.Errorf("resolved version is not a release tag: %w", err)
+	if target.Tag != "" {
+		if _, err := ParseVersion(target.Tag); err != nil {
+			return fmt.Errorf("resolved version is not a release tag: %w", err)
+		}
 	}
 	if !validCommit(target.Commit) {
 		return errors.New("resolved target has no valid commit")
@@ -148,19 +156,31 @@ func directorySizeExceeds(root string, maxBytes int64) (bool, error) {
 			}
 			return err
 		}
-		if entry.Type().IsRegular() {
-			info, err := entry.Info()
-			if err != nil {
-				return err
-			}
-			total += info.Size()
-			if total > maxBytes {
-				return fs.SkipAll
-			}
+		size, err := regularFileSize(entry)
+		if err != nil {
+			return err
+		}
+		total += size
+		if total > maxBytes {
+			return fs.SkipAll
 		}
 		return nil
 	})
 	return total > maxBytes, err
+}
+
+func regularFileSize(entry fs.DirEntry) (int64, error) {
+	if !entry.Type().IsRegular() {
+		return 0, nil
+	}
+	info, err := entry.Info()
+	if errors.Is(err, os.ErrNotExist) { // Go removes transient cache locks while we walk.
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
 }
 
 func removeSourceDir(path string) {
@@ -175,24 +195,30 @@ func removeSourceDir(path string) {
 	}
 }
 
-func verifySourceOrigin(ctx context.Context, module string, target Target, modCache string) error {
+func verifySourceOrigin(ctx context.Context, module string, target Target, modCache string) (string, error) {
 	out, err := commandOutputEnv(ctx, 60*time.Second, 1<<20, sourceInstallEnv("", modCache), "go", "mod", "download", "-json", module)
 	if err != nil {
-		return fmt.Errorf("verifying source origin: %w", err)
+		return "", fmt.Errorf("verifying source origin: %w", err)
 	}
 	var download struct {
-		Path, Version, Sum string
-		Origin             struct{ URL, Hash, Ref string }
+		Path, Version, Query, Sum string
+		Origin                    struct{ URL, Hash, Ref string }
 	}
 	if err := json.Unmarshal(out, &download); err != nil {
-		return fmt.Errorf("decoding source origin: %w", err)
+		return "", fmt.Errorf("decoding source origin: %w", err)
 	}
-	if download.Path != modulePath || download.Version != target.Tag || download.Sum == "" ||
-		download.Origin.URL != "https://github.com/MSmaili/hetki" || download.Origin.Hash != target.Commit ||
-		download.Origin.Ref != "refs/tags/"+target.Tag {
-		return fmt.Errorf("source origin does not match %s at %s", target.Tag, target.Commit)
+	matchesTarget := download.Query == target.Commit
+	if target.Tag != "" {
+		matchesTarget = download.Version == target.Tag && download.Origin.Ref == "refs/tags/"+target.Tag
 	}
-	return nil
+	if download.Path != modulePath || download.Sum == "" || download.Origin.URL != "https://github.com/MSmaili/hetki" ||
+		download.Origin.Hash != target.Commit || !matchesTarget {
+		return "", fmt.Errorf("source origin does not match requested commit %s", target.Commit)
+	}
+	if _, err := ParseVersion(download.Version); err != nil {
+		return "", fmt.Errorf("source version rejected: %w", err)
+	}
+	return download.Version, nil
 }
 
 func sourceInstallEnv(gobin, modCache string) []string {

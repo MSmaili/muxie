@@ -41,17 +41,12 @@ func supportedPlatform(goos, goarch string) bool {
 }
 
 type BinaryUpdater struct {
-	exePath    string
-	FromSource bool
+	exePath string
 }
 
 func (b *BinaryUpdater) Name() string { return "binary release" }
 
 func (b *BinaryUpdater) DryRun(target Target) {
-	if b.FromSource {
-		logger.Info("Would run: go install %s@%s and verify commit %s", modulePath, target.Tag, target.Commit)
-		return
-	}
 	binaryName := fmt.Sprintf("hetki-%s-%s", runtime.GOOS, runtime.GOARCH)
 	logger.Info("Would download: %s%s/releases/download/%s/%s", githubReleaseURL, githubRepo, target.Tag, binaryName)
 	logger.Info("Would verify its GitHub artifact attestation and replace: %s", b.exePath)
@@ -59,10 +54,6 @@ func (b *BinaryUpdater) DryRun(target Target) {
 
 func (b *BinaryUpdater) Update(ctx context.Context, target Target) error {
 	targetTag := target.Tag
-	if b.FromSource {
-		logger.Info("--source flag set, falling back to go install...")
-		return (&GoUpdater{exePath: b.exePath}).Update(ctx, target)
-	}
 	if targetTag == "" {
 		return errors.New("no exact release tag resolved")
 	}

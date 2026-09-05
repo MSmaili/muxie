@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -37,8 +38,11 @@ type stubUpdater struct {
 	lastTarget  Target
 }
 
-func (s *stubUpdater) Name() string    { return "stub" }
-func (s *stubUpdater) DryRun(_ Target) { s.dryRunCalls++ }
+func (s *stubUpdater) Name() string { return "stub" }
+func (s *stubUpdater) DryRun(target Target) {
+	s.dryRunCalls++
+	s.lastTarget = target
+}
 func (s *stubUpdater) Update(_ context.Context, target Target) error {
 	s.updateCalls++
 	s.lastTarget = target
@@ -150,6 +154,17 @@ func TestDirectorySizeExceedsBound(t *testing.T) {
 	assert.False(t, exceeded)
 }
 
+type vanishedDirEntry struct{ fs.DirEntry }
+
+func (vanishedDirEntry) Type() fs.FileMode          { return 0 }
+func (vanishedDirEntry) Info() (fs.FileInfo, error) { return nil, os.ErrNotExist }
+
+func TestRegularFileSizeIgnoresVanishedCacheFile(t *testing.T) {
+	size, err := regularFileSize(vanishedDirEntry{})
+	require.NoError(t, err)
+	assert.Zero(t, size)
+}
+
 func TestCommandOutputKillsInheritedPipeDescendant(t *testing.T) {
 	dir := t.TempDir()
 	script, pidPath := filepath.Join(dir, "leak-output"), filepath.Join(dir, "child.pid")
@@ -235,7 +250,7 @@ func TestServiceRunExactVersionReinstallsAndDowngrades(t *testing.T) {
 	assert.Equal(t, testTarget("v1.0.0"), updater.lastTarget)
 }
 
-func TestServiceRunRefusesPrereleaseWithoutOptIn(t *testing.T) {
+func TestServiceRunRefusesPrerelease(t *testing.T) {
 	updater := &stubUpdater{}
 	service := Service{
 		SetVerbose:       func(bool) {},
@@ -250,28 +265,40 @@ func TestServiceRunRefusesPrereleaseWithoutOptIn(t *testing.T) {
 }
 
 func TestGoUpdaterBuildsToTemporaryGOBINAndReplaces(t *testing.T) {
-	bin := t.TempDir()
-	goPath := filepath.Join(bin, "go")
-	script := fmt.Sprintf(`#!/bin/sh
+	for _, tag := range []string{"v1.2.3", ""} {
+		t.Run("tag="+tag, func(t *testing.T) {
+			version, query, originRef := tag, tag, "refs/tags/"+tag
+			if tag == "" {
+				version, query, originRef = "v1.2.4-0.20260906000000-aaaaaaaaaaaa", testCommit, ""
+			}
+			bin := t.TempDir()
+			goPath := filepath.Join(bin, "go")
+			script := fmt.Sprintf(`#!/bin/sh
 [ "$GOPROXY" = direct ] && [ "$GOSUMDB" = sum.golang.org ] && [ -n "$GOMODCACHE" ] && [ "$GOCACHE" = "${GOMODCACHE%%/modcache}/gocache" ] && [ "$GOTMPDIR" = "${GOMODCACHE%%/modcache}/tmp" ] && [ -z "$GONOSUMDB" ] && [ -z "$GOPRIVATE" ] && [ -z "$GONOPROXY" ] || exit 7
+case "$*" in *github.com/MSmaili/hetki@%s) ;; *) exit 8 ;; esac
 if [ "$1 $2" = "mod download" ]; then
-  printf '{"Path":"github.com/MSmaili/hetki","Version":"v1.2.3","Sum":"h1:test","Origin":{"URL":"https://github.com/MSmaili/hetki","Hash":"%s","Ref":"refs/tags/v1.2.3"}}\n'
+  printf '{"Path":"github.com/MSmaili/hetki","Version":"%s","Query":"%s","Sum":"h1:test","Origin":{"URL":"https://github.com/MSmaili/hetki","Hash":"%s","Ref":"%s"}}\n'
   exit 0
 fi
-case "$*" in *github.com/MSmaili/hetki@v1.2.3*) ;; *) exit 8 ;; esac
 case "$*" in *GitCommit=%s*) ;; *) exit 9 ;; esac
+case "$*" in *cmd.Version=%s*) ;; *) exit 10 ;; esac
 mkdir -p "$GOBIN"
-printf '#!/bin/sh\nprintf '\''hetki version v1.2.3\\ncommit: %s\\n'\''\n' > "$GOBIN/hetki"
+printf '#!/bin/sh\nprintf '\''hetki version %s\\ncommit: %s\\n'\''\n' > "$GOBIN/hetki"
 chmod +x "$GOBIN/hetki"
-`, testCommit, testCommit, testCommit)
-	require.NoError(t, os.WriteFile(goPath, []byte(script), 0755))
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	exePath := filepath.Join(bin, "hetki")
-	fakeBinary(t, exePath, "v1.0.0")
+`, query, version, query, testCommit, originRef, testCommit, version, version, testCommit)
+			require.NoError(t, os.WriteFile(goPath, []byte(script), 0755))
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			exePath := filepath.Join(bin, "hetki")
+			fakeBinary(t, exePath, "v1.0.0")
 
-	require.NoError(t, (&GoUpdater{exePath: exePath}).Update(context.Background(), testTarget("v1.2.3")))
-	assert.Equal(t, "v1.2.3", readScriptVersion(t, exePath))
-	assert.NoFileExists(t, exePath+".hetki-backup")
+			require.NoError(t, (&GoUpdater{exePath: exePath}).Update(context.Background(), testTarget(tag)))
+			assert.Equal(t, version, readScriptVersion(t, exePath))
+			assert.NoFileExists(t, exePath+".hetki-backup")
+			workspaces, err := filepath.Glob(filepath.Join(bin, ".hetki-source-*"))
+			require.NoError(t, err)
+			assert.Empty(t, workspaces)
+		})
+	}
 }
 
 func TestGoUpdaterBoundsInheritedOutputDescendant(t *testing.T) {
@@ -306,12 +333,121 @@ sleep 10 & echo $! > %q
 	assert.Equal(t, "v1.0.0", readScriptVersion(t, exePath))
 }
 
-func TestGoUpdaterRequiresExactVersion(t *testing.T) {
+func TestServiceRunHead(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		opts       Options
+		commit     string
+		resolveErr error
+		wantErr    string
+		updates    int
+		dryRuns    int
+	}{
+		{name: "release to head", updates: 1},
+		{name: "ignores semver ordering", opts: Options{CurrentVersion: "v99.0.0"}, updates: 1},
+		{name: "unknown current commit", opts: Options{CurrentCommit: "unknown"}, updates: 1},
+		{name: "new commit", opts: Options{CurrentCommit: strings.Repeat("b", 40)}, updates: 1},
+		{name: "same commit", opts: Options{CurrentCommit: testCommit}},
+		{name: "dry run", opts: Options{DryRun: true}, dryRuns: 1},
+		{name: "pinned version conflict", opts: Options{TargetVersion: "v1.2.3"}, wantErr: "cannot be combined"},
+		{name: "invalid commit", commit: "bad", wantErr: "valid commit"},
+		{name: "resolution fails", resolveErr: errors.New("offline"), wantErr: "offline"},
+		{name: "resolution canceled", resolveErr: context.Canceled, wantErr: "context canceled"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			updater := &stubUpdater{}
+			service := Service{
+				SetVerbose:       func(bool) {},
+				Executable:       func() (string, error) { return "/tmp/hetki", nil },
+				DetermineUpdater: func(string) (Updater, error) { return updater, nil },
+				ResolveTarget: func(context.Context, Options) (string, error) {
+					t.Fatal("head must not resolve a release")
+					return "", nil
+				},
+				ResolveHead: func(context.Context) (string, error) {
+					if test.commit != "" {
+						return test.commit, test.resolveErr
+					}
+					return testCommit, test.resolveErr
+				},
+			}
+			opts := test.opts
+			opts.Head = true
+			err := service.Run(context.Background(), opts)
+			if test.wantErr != "" {
+				require.ErrorContains(t, err, test.wantErr)
+				if test.resolveErr != nil {
+					require.ErrorIs(t, err, test.resolveErr)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, test.updates, updater.updateCalls)
+			assert.Equal(t, test.dryRuns, updater.dryRunCalls)
+			if test.updates+test.dryRuns > 0 {
+				assert.Equal(t, Target{Commit: testCommit}, updater.lastTarget)
+			}
+		})
+	}
+}
+
+func TestDetermineUpdaterReleaseAndHead(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	t.Setenv("HOME", home)
+	t.Setenv("GOBIN", filepath.Join(home, "go", "bin"))
+	t.Setenv("GOPATH", filepath.Join(home, "go"))
+	for _, dir := range []string{"go/bin", ".local/bin", "bin"} {
+		exe := filepath.Join(home, dir, "hetki")
+		require.NoError(t, os.MkdirAll(filepath.Dir(exe), 0700))
+		fakeBinary(t, exe, "v1.2.3")
+		updater, err := DetermineUpdater(exe, Options{})
+		require.NoError(t, err)
+		if dir == "go/bin" {
+			assert.IsType(t, &GoUpdater{}, updater)
+		} else {
+			assert.IsType(t, &BinaryUpdater{}, updater)
+		}
+		updater, err = DetermineUpdater(exe, Options{Head: true, Verbose: true})
+		require.NoError(t, err)
+		assert.Equal(t, &GoUpdater{exePath: exe, Verbose: true}, updater)
+	}
+}
+
+func TestGoUpdaterRejectsUnverifiedSource(t *testing.T) {
+	metadata := fmt.Sprintf(`{"Path":"github.com/MSmaili/hetki","Version":"v1.2.3","Query":"%s","Sum":"h1:test","Origin":{"URL":"https://github.com/MSmaili/hetki","Hash":"%s","Ref":"refs/tags/v1.2.3"}}`, testCommit, testCommit)
+	for _, test := range []struct {
+		name, tag, from, to string
+	}{
+		{name: "wrong module", from: `"Path":"github.com/MSmaili/hetki"`, to: `"Path":"other"`},
+		{name: "wrong repository", from: `"URL":"https://github.com/MSmaili/hetki"`, to: `"URL":"other"`},
+		{name: "wrong commit", from: `"Hash":"` + testCommit + `"`, to: `"Hash":"` + strings.Repeat("b", 40) + `"`},
+		{name: "missing sum", from: `"Sum":"h1:test"`, to: `"Sum":""`},
+		{name: "mutable query", from: `"Query":"` + testCommit + `"`, to: `"Query":"main"`},
+		{name: "invalid version", from: `"Version":"v1.2.3"`, to: `"Version":"main"`},
+		{name: "wrong release version", tag: "v1.2.3", from: `"Version":"v1.2.3"`, to: `"Version":"v1.2.4"`},
+		{name: "wrong release ref", tag: "v1.2.3", from: `"Ref":"refs/tags/v1.2.3"`, to: `"Ref":"refs/heads/main"`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			bin := t.TempDir()
+			script := "#!/bin/sh\n[ \"$1 $2\" = \"mod download\" ] || exit 99\nprintf '%s\\n' '" + strings.Replace(metadata, test.from, test.to, 1) + "'\n"
+			require.NoError(t, os.WriteFile(filepath.Join(bin, "go"), []byte(script), 0755))
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			exe := filepath.Join(bin, "hetki")
+			fakeBinary(t, exe, "v1.0.0")
+			err := (&GoUpdater{exePath: exe}).Update(context.Background(), testTarget(test.tag))
+			require.ErrorContains(t, err, "source")
+			assert.Equal(t, "v1.0.0", readScriptVersion(t, exe))
+		})
+	}
+}
+
+func TestGoUpdaterRequiresExactTagOrCommit(t *testing.T) {
 	bin := t.TempDir()
 	goPath := filepath.Join(bin, "go")
 	require.NoError(t, os.WriteFile(goPath, []byte("#!/bin/sh\nexit 0\n"), 0755))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	require.ErrorContains(t, (&GoUpdater{}).Update(context.Background(), Target{}), "exact release tag")
+	require.ErrorContains(t, (&GoUpdater{}).Update(context.Background(), Target{}), "valid commit")
 	require.ErrorContains(t, (&GoUpdater{}).Update(context.Background(), Target{Tag: "main", Commit: testCommit}), "release tag")
 }

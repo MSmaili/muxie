@@ -2,6 +2,7 @@ package update
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -14,16 +15,16 @@ const (
 )
 
 type Options struct {
-	CurrentVersion  string
-	TargetVersion   string // exact tag from --version; empty means latest
-	AllowPrerelease bool   // --pre; prereleases are otherwise invisible
-	FromSource      bool
-	DryRun          bool
-	Verbose         bool
+	CurrentVersion string
+	CurrentCommit  string
+	TargetVersion  string // exact tag from --version; empty means latest
+	Head           bool   // build the latest commit on main
+	DryRun         bool
+	Verbose        bool
 }
 
 type Target struct {
-	Tag    string
+	Tag    string // empty for a commit-pinned source build; filled after module resolution
 	Commit string
 }
 
@@ -39,6 +40,7 @@ type Service struct {
 	DetermineUpdater func(string) (Updater, error)
 	ResolveTarget    func(context.Context, Options) (string, error)
 	ResolveCommit    func(context.Context, string) (string, error)
+	ResolveHead      func(context.Context) (string, error)
 }
 
 func NewService() Service {
@@ -48,6 +50,9 @@ func NewService() Service {
 func (s Service) Run(ctx context.Context, opts Options) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if opts.Head && opts.TargetVersion != "" {
+		return errors.New("--head cannot be combined with --version")
 	}
 	s.setVerbose(opts.Verbose)
 
@@ -63,7 +68,11 @@ func (s Service) Run(ctx context.Context, opts Options) error {
 	}
 	logger.Verbose("Detected installation method: %s", updater.Name())
 
-	// D4: fail closed — no update proceeds without an exact resolved tag.
+	if opts.Head {
+		return s.runHeadUpdate(ctx, opts, updater)
+	}
+
+	// D4: fail closed — no release update proceeds without an exact resolved tag.
 	targetTag, err := s.resolveTarget(ctx, opts)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -72,7 +81,7 @@ func (s Service) Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("could not resolve a release to install: %w", err)
 	}
 	exact := opts.TargetVersion != ""
-	install, reason, err := decideUpdate(opts.CurrentVersion, targetTag, exact, opts.AllowPrerelease)
+	install, reason, err := decideUpdate(opts.CurrentVersion, targetTag, exact)
 	if err != nil {
 		return err
 	}
@@ -96,6 +105,32 @@ func (s Service) Run(ctx context.Context, opts Options) error {
 		logger.Info("Current version: %s", opts.CurrentVersion)
 		logger.Info("Updating to: %s (%s)", targetTag, reason)
 	}
+	if err := updater.Update(ctx, target); err != nil {
+		return fmt.Errorf("update failed: %w", err)
+	}
+	logger.Success("Update completed successfully")
+	return nil
+}
+
+func (s Service) runHeadUpdate(ctx context.Context, opts Options, updater Updater) error {
+	commit, err := s.resolveHead(ctx)
+	if err != nil {
+		return fmt.Errorf("could not resolve the latest main commit: %w", err)
+	}
+	if !validCommit(commit) {
+		return errors.New("main does not resolve to a valid commit")
+	}
+	if commit == opts.CurrentCommit {
+		logger.Success("already on the latest main commit (%s)", commit[:12])
+		return nil
+	}
+	target := Target{Commit: commit}
+	if opts.DryRun {
+		updater.DryRun(target)
+		return nil
+	}
+	logger.Info("Current version: %s", opts.CurrentVersion)
+	logger.Info("Updating to latest main commit: %s", commit[:12])
 	if err := updater.Update(ctx, target); err != nil {
 		return fmt.Errorf("update failed: %w", err)
 	}
@@ -137,4 +172,11 @@ func (s Service) resolveCommit(ctx context.Context, tag string) (string, error) 
 		return s.ResolveCommit(ctx, tag)
 	}
 	return resolveTagCommit(ctx, tag)
+}
+
+func (s Service) resolveHead(ctx context.Context) (string, error) {
+	if s.ResolveHead != nil {
+		return s.ResolveHead(ctx)
+	}
+	return resolveHeadCommit(ctx)
 }

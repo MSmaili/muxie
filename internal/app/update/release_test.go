@@ -68,16 +68,22 @@ func TestResolveTargetExactTagDraftFails(t *testing.T) {
 	require.ErrorContains(t, err, "draft")
 }
 
-func TestResolveTargetExactTagRequiresOptInForGitHubPrerelease(t *testing.T) {
+func TestResolveTargetExactTagRejectsGitHubPrerelease(t *testing.T) {
 	stubGitHub(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"tag_name":"v1.2.3","prerelease":true}`))
 	})
 
 	_, err := ResolveTarget(context.Background(), Options{TargetVersion: "v1.2.3"})
-	require.ErrorContains(t, err, "--pre")
-	tag, err := ResolveTarget(context.Background(), Options{TargetVersion: "v1.2.3", AllowPrerelease: true})
-	require.NoError(t, err)
-	assert.Equal(t, "v1.2.3", tag)
+	require.ErrorContains(t, err, "prerelease")
+}
+
+func TestResolveTargetExactPrereleaseRejectedLocally(t *testing.T) {
+	stubGitHub(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("prerelease tag must fail before any network call")
+	})
+
+	_, err := ResolveTarget(context.Background(), Options{TargetVersion: "v1.4.0-rc.1"})
+	require.ErrorContains(t, err, "prerelease")
 }
 
 func TestResolveTargetLatestStable(t *testing.T) {
@@ -100,29 +106,30 @@ func TestResolveTargetLatestStableRejectsUnparsableTag(t *testing.T) {
 	require.ErrorContains(t, err, "published release tag rejected")
 }
 
-func TestResolveTargetPrereleasePicksNewestOverall(t *testing.T) {
+func TestResolveTargetSkipsPrereleasesAndDrafts(t *testing.T) {
 	stubGitHub(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/repos/MSmaili/hetki/releases", r.URL.Path)
 		w.Write([]byte(`[
 			{"tag_name": "v1.4.0-rc.2"},
 			{"tag_name": "v1.4.0-rc.10"},
+			{"tag_name": "v1.5.0", "prerelease": true},
 			{"tag_name": "v1.3.0"},
 			{"tag_name": "v1.3.5", "draft": true}
 		]`))
 	})
 
-	tag, err := ResolveTarget(context.Background(), Options{AllowPrerelease: true})
+	tag, err := ResolveTarget(context.Background(), Options{})
 	require.NoError(t, err)
-	assert.Equal(t, "v1.4.0-rc.10", tag, "numeric prerelease comparison, drafts skipped")
+	assert.Equal(t, "v1.3.0", tag)
 }
 
-func TestResolveTargetPrereleaseAllTagsInvalidFails(t *testing.T) {
+func TestResolveTargetWithoutStableReleaseFails(t *testing.T) {
 	stubGitHub(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`[{"tag_name": "nightly"}, {"tag_name": "v1"}]`))
+		w.Write([]byte(`[{"tag_name":"v1.4.0-rc.1"},{"tag_name":"v1.5.0","prerelease":true}]`))
 	})
 
-	_, err := ResolveTarget(context.Background(), Options{AllowPrerelease: true})
-	require.ErrorContains(t, err, "published release tag rejected")
+	_, err := ResolveTarget(context.Background(), Options{})
+	require.ErrorContains(t, err, "no matching published release")
 }
 
 func TestResolveTargetListHTTPErrorFails(t *testing.T) {
@@ -130,7 +137,7 @@ func TestResolveTargetListHTTPErrorFails(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
 
-	_, err := ResolveTarget(context.Background(), Options{AllowPrerelease: true})
+	_, err := ResolveTarget(context.Background(), Options{})
 	require.ErrorContains(t, err, "listing releases")
 }
 
@@ -170,6 +177,39 @@ func TestResolveTagCommitPeelsAnnotatedTag(t *testing.T) {
 	got, err := resolveTagCommit(context.Background(), "v1.2.3")
 	require.NoError(t, err)
 	assert.Equal(t, commit, got)
+}
+
+func TestResolveHeadCommit(t *testing.T) {
+	for _, test := range []struct {
+		name, body string
+		status     int
+		wantErr    bool
+	}{
+		{name: "main", body: fmt.Sprintf(`{"object":{"sha":%q,"type":"commit"}}`, testCommit)},
+		{name: "invalid hash", body: `{"object":{"sha":"bad","type":"commit"}}`, wantErr: true},
+		{name: "wrong type", body: fmt.Sprintf(`{"object":{"sha":%q,"type":"tag"}}`, testCommit), wantErr: true},
+		{name: "missing object", body: `{}`, wantErr: true},
+		{name: "missing branch", status: http.StatusNotFound, wantErr: true},
+		{name: "rate limited", status: http.StatusForbidden, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			stubGitHub(t, func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "/repos/MSmaili/hetki/git/ref/heads/main", r.URL.Path)
+				if test.status != 0 {
+					w.WriteHeader(test.status)
+				}
+				fmt.Fprint(w, test.body)
+			})
+			commit, err := resolveHeadCommit(context.Background())
+			if test.wantErr {
+				require.Error(t, err)
+				assert.Empty(t, commit)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, testCommit, commit)
+		})
+	}
 }
 
 func TestRedirectsToUnknownHostsAreRejected(t *testing.T) {

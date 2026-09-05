@@ -26,6 +26,18 @@ go install github.com/MSmaili/hetki@latest
 curl -fsSL https://raw.githubusercontent.com/MSmaili/hetki/main/install.sh | bash
 ```
 
+## Updating
+
+```bash
+hetki update          # Latest stable release
+hetki update --head   # Latest pushed commit on main (requires Go; unreleased code)
+```
+
+`--head` pins and verifies the current `main` commit before building. Repeat it to
+get newer pushed commits; local unpushed changes are not included.
+Release updates exclude prereleases. Use `--version vX.Y.Z` to return to a specific
+stable release.
+
 ## Quick start
 
 ```bash

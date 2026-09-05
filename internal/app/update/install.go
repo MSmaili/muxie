@@ -14,7 +14,10 @@ func DetermineUpdater(exePath string, opts Options) (Updater, error) {
 		return &GoUpdater{exePath: exePath, Verbose: opts.Verbose}, nil
 	}
 	if isUserLocalInstall(exePath) {
-		return &BinaryUpdater{exePath: exePath, FromSource: opts.FromSource}, nil
+		if opts.Head {
+			return &GoUpdater{exePath: exePath, Verbose: opts.Verbose}, nil
+		}
+		return &BinaryUpdater{exePath: exePath}, nil
 	}
 	return nil, errors.New(
 		"hetki was not installed via `go install` or to ~/.local/bin or ~/bin; manual update required",

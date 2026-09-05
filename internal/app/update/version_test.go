@@ -104,7 +104,6 @@ func TestDecideUpdate(t *testing.T) {
 		current       string
 		target        string
 		exact         bool
-		allowPre      bool
 		wantInstall   bool
 		wantReasonSub string
 		wantErr       bool
@@ -117,16 +116,16 @@ func TestDecideUpdate(t *testing.T) {
 		{name: "unparsable current fails closed", current: "1.2.3", target: "v1.0.0", wantErr: true},
 		{name: "unparsable target fails closed", current: "v1.0.0", target: "latest", wantErr: true},
 		{
-			name: "prerelease target needs opt in", current: "v1.2.3", target: "v1.3.0-rc.1",
+			name: "prerelease target rejected", current: "v1.2.3", target: "v1.3.0-rc.1",
 			wantErr: true,
 		},
 		{
-			name: "prerelease target with opt in", current: "v1.2.3", target: "v1.3.0-rc.1", allowPre: true,
-			wantInstall: true, wantReasonSub: "newer",
+			name: "head build is not downgraded", current: "v1.2.4-0.20260906000000-aaaaaaaaaaaa", target: "v1.2.3",
+			wantReasonSub: "newer than latest published",
 		},
 		{
-			name: "older prerelease with opt in is still not a downgrade", current: "v1.3.0", target: "v1.3.0-rc.1", allowPre: true,
-			wantReasonSub: "newer than latest published",
+			name: "head build moves to newer stable", current: "v1.2.4-0.20260906000000-aaaaaaaaaaaa", target: "v1.2.4",
+			wantInstall: true, wantReasonSub: "newer",
 		},
 		{
 			name: "exact selection permits downgrade", current: "v1.5.0", target: "v1.2.3", exact: true,
@@ -141,17 +140,13 @@ func TestDecideUpdate(t *testing.T) {
 			wantInstall: true, wantReasonSub: "explicit",
 		},
 		{
-			name: "exact prerelease still needs opt in", current: "v1.2.3", target: "v1.3.0-rc.1", exact: true,
+			name: "exact prerelease rejected", current: "v1.2.3", target: "v1.3.0-rc.1", exact: true,
 			wantErr: true,
-		},
-		{
-			name: "exact prerelease with opt in", current: "v1.2.3", target: "v1.3.0-rc.1", exact: true, allowPre: true,
-			wantInstall: true, wantReasonSub: "explicit",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			install, reason, err := decideUpdate(tt.current, tt.target, tt.exact, tt.allowPre)
+			install, reason, err := decideUpdate(tt.current, tt.target, tt.exact)
 			if tt.wantErr {
 				require.Error(t, err)
 				assert.False(t, install)

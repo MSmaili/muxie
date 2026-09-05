@@ -106,6 +106,17 @@ func TestRootRejectsArgumentsAndRemovedCommands(t *testing.T) {
 	}
 }
 
+func TestUpdateRejectsRemovedFlags(t *testing.T) {
+	require.NotNil(t, updateCmd.Flags().Lookup("head"))
+	t.Cleanup(func() { rootCmd.SetArgs(nil) })
+	for _, flag := range []string{"--source", "--pre"} {
+		require.NotContains(t, updateCmd.Flags().FlagUsages(), flag)
+		rootCmd.SetArgs([]string{"update", flag})
+		_, err := rootCmd.ExecuteC()
+		require.ErrorContains(t, err, "unknown flag: "+flag)
+	}
+}
+
 func TestCommandSignalContextCancelsOnTerminationSignals(t *testing.T) {
 	for _, terminationSignal := range []os.Signal{os.Interrupt, syscall.SIGTERM} {
 		t.Run(terminationSignal.String(), func(t *testing.T) {

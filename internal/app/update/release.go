@@ -128,7 +128,8 @@ func listReleases(ctx context.Context) ([]ghRelease, error) {
 	return nil, fmt.Errorf("release history exceeds scan limit of %d", releasesPerPage*maxReleasePages)
 }
 
-func newestRelease(ctx context.Context, includePrerelease bool) (ghRelease, error) {
+// fetchLatestRelease resolves the highest stable semantic version.
+func fetchLatestRelease(ctx context.Context) (ghRelease, error) {
 	releases, err := listReleases(ctx)
 	if err != nil {
 		return ghRelease{}, err
@@ -144,7 +145,7 @@ func newestRelease(ctx context.Context, includePrerelease bool) (ghRelease, erro
 		if err != nil {
 			return ghRelease{}, fmt.Errorf("published release tag rejected: %w", err)
 		}
-		if !includePrerelease && (release.Prerelease || version.IsPrerelease()) {
+		if release.Prerelease || version.IsPrerelease() {
 			continue
 		}
 		if !found || newestVersion.Compare(version) < 0 {
@@ -155,11 +156,6 @@ func newestRelease(ctx context.Context, includePrerelease bool) (ghRelease, erro
 		return ghRelease{}, errors.New("no matching published release found")
 	}
 	return newest, nil
-}
-
-// fetchLatestRelease resolves the highest stable semantic version.
-func fetchLatestRelease(ctx context.Context) (ghRelease, error) {
-	return newestRelease(ctx, false)
 }
 
 func resolveTagCommit(ctx context.Context, tag string) (string, error) {
@@ -185,6 +181,23 @@ func resolveTagCommit(ctx context.Context, tag string) (string, error) {
 	return object.Object.SHA, nil
 }
 
+func resolveHeadCommit(ctx context.Context) (string, error) {
+	var ref struct {
+		Object struct {
+			SHA  string `json:"sha"`
+			Type string `json:"type"`
+		} `json:"object"`
+	}
+	url := apiBase + "repos/" + githubRepoPath + "git/ref/heads/main"
+	if err := getJSON(ctx, url, 10*time.Second, &ref); err != nil {
+		return "", err
+	}
+	if ref.Object.Type != "commit" || !validCommit(ref.Object.SHA) {
+		return "", errors.New("main does not resolve to a valid commit")
+	}
+	return ref.Object.SHA, nil
+}
+
 func validCommit(commit string) bool {
 	if len(commit) != 40 && len(commit) != 64 {
 		return false
@@ -194,28 +207,23 @@ func validCommit(commit string) bool {
 }
 
 // ResolveTarget returns the exact release tag the updater must install (D4):
-// the pinned --version tag when set, otherwise the newest stable release, or
-// with AllowPrerelease the newest release of any channel. Unparsable tags
-// fail closed instead of being silently skipped.
+// the pinned stable --version tag when set, otherwise the newest stable release.
+// Unparsable tags fail closed instead of being silently skipped.
 func ResolveTarget(ctx context.Context, opts Options) (string, error) {
 	if opts.TargetVersion != "" {
-		if _, err := ParseVersion(opts.TargetVersion); err != nil {
+		version, err := ParseVersion(opts.TargetVersion)
+		if err != nil {
 			return "", err
+		}
+		if version.IsPrerelease() {
+			return "", fmt.Errorf("release %s is a prerelease; select a stable release or use --head for main", opts.TargetVersion)
 		}
 		release, err := fetchReleaseByTag(ctx, opts.TargetVersion)
 		if err != nil {
 			return "", err
 		}
-		if release.Prerelease && !opts.AllowPrerelease {
-			return "", fmt.Errorf("release %s is marked as a prerelease; pass --pre to opt in", release.TagName)
-		}
-		return release.TagName, nil
-	}
-
-	if opts.AllowPrerelease {
-		release, err := newestRelease(ctx, true)
-		if err != nil {
-			return "", err
+		if release.Prerelease {
+			return "", fmt.Errorf("release %s is marked as a prerelease; select a stable release or use --head for main", release.TagName)
 		}
 		return release.TagName, nil
 	}
