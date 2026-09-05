@@ -39,7 +39,7 @@ func (m *model) openOverlay(result ActionResult, pending *ActionRequest) {
 		m.err = fmt.Errorf("overlay action has no pending request")
 		return
 	}
-	returnMode := primaryReturnMode(m.mode)
+	returnMode := m.currentReturnMode()
 	switch {
 	case result.Menu != nil:
 		menu := result.Menu
@@ -74,19 +74,14 @@ func (m *model) openOverlay(result ActionResult, pending *ActionRequest) {
 }
 
 func (m model) updateMenuMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case m.keys.Matches(KeyModeMenu, ActionCancel, msg):
-		m.mode = primaryReturnMode(m.menu.ReturnMode)
-		m.menu = menuState{}
-		return m, nil
-	case m.keys.Matches(KeyModeMenu, ActionMoveUp, msg):
-		m.menu.Cursor = max(0, m.menu.Cursor-1)
-		return m, nil
-	case m.keys.Matches(KeyModeMenu, ActionMoveDown, msg):
-		m.menu.Cursor = min(len(m.menu.Entries)-1, m.menu.Cursor+1)
-		return m, nil
-	case m.keys.Matches(KeyModeMenu, ActionConfirm, msg):
-		return m.activateMenuEntry(m.menu.Cursor)
+	if action, ok := m.keys.Action(KeyModeMenu, msg); ok {
+		if index := m.menuEntryIndex(action); index >= 0 {
+			return m.activateMenuEntry(index)
+		}
+		if requiresMenuEntry(action) {
+			return m.actionUnavailable(action)
+		}
+		return m.dispatchAction(action, "")
 	}
 	for i, entry := range m.menu.Entries {
 		if m.keys.Matches(m.keys.menuMode(entry.Action), entry.Action, msg) {
@@ -94,6 +89,19 @@ func (m model) updateMenuMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func isMenuControl(action ActionID) bool {
+	return action == ActionCancel || action == ActionConfirm || action == ActionMoveUp || action == ActionMoveDown
+}
+
+func (m model) menuEntryIndex(action ActionID) int {
+	for i, entry := range m.menu.Entries {
+		if entry.Action == action {
+			return i
+		}
+	}
+	return -1
 }
 
 func (m model) activateMenuEntry(index int) (tea.Model, tea.Cmd) {
@@ -105,17 +113,37 @@ func (m model) activateMenuEntry(index int) (tea.Model, tea.Cmd) {
 	itemID := m.menu.ItemID
 	m.mode = primaryReturnMode(m.menu.ReturnMode)
 	m.menu = menuState{}
-	return m.startAction(entry.Action, itemID)
+	return m.dispatchAction(entry.Action, itemID)
 }
 
-func (m model) updateInputMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case m.keys.Matches(KeyModeInput, ActionCancel, msg):
+func handleCancel(m model, _ list.ItemID) (tea.Model, tea.Cmd) {
+	switch m.mode {
+	case modeJump:
+		m.cancelJump()
+	case modeFilter:
+		m.mode = modeBrowse
+	case modeInput:
 		m.mode = primaryReturnMode(m.input.ReturnMode)
 		m.input = inputState{}
 		m.err = nil
-		return m, nil
-	case m.keys.Matches(KeyModeInput, ActionConfirm, msg):
+	case modeConfirm:
+		m.mode = primaryReturnMode(m.confirm.ReturnMode)
+		m.confirm = confirmState{}
+	case modeMenu:
+		m.mode = primaryReturnMode(m.menu.ReturnMode)
+		m.menu = menuState{}
+	default:
+		return m.actionUnavailable(ActionCancel)
+	}
+	return m, nil
+}
+
+func handleConfirm(m model, _ list.ItemID) (tea.Model, tea.Cmd) {
+	switch m.mode {
+	case modeFilter:
+		m.mode = modeBrowse
+		return m.dispatchAction(ActionOpen, "")
+	case modeInput:
 		value := strings.TrimSpace(m.input.Value)
 		if value == "" {
 			m.err = errors.New(statusValueEmpty)
@@ -130,21 +158,7 @@ func (m model) updateInputMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.mode = primaryReturnMode(m.input.ReturnMode)
 		m.input = inputState{}
 		return m.startRequest(request, status)
-	}
-	value, edited := editEndOfLine(m.input.Value, m.keys, KeyModeInput, msg)
-	if edited {
-		m.input.Value = value
-		m.err = nil
-	}
-	return m, nil
-}
-
-func (m model) updateConfirmMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case m.keys.Matches(KeyModeConfirm, ActionCancel, msg):
-		m.mode = primaryReturnMode(m.confirm.ReturnMode)
-		m.confirm = confirmState{}
-	case m.keys.Matches(KeyModeConfirm, ActionConfirm, msg):
+	case modeConfirm:
 		request := m.confirm.Request
 		request.Confirmed = true
 		status := m.confirm.SubmitStatus
@@ -154,8 +168,35 @@ func (m model) updateConfirmMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.mode = primaryReturnMode(m.confirm.ReturnMode)
 		m.confirm = confirmState{}
 		return m.startRequest(request, status)
+	case modeMenu:
+		return m.activateMenuEntry(m.menu.Cursor)
+	default:
+		return m.actionUnavailable(ActionConfirm)
 	}
-	return m, nil
+}
+
+func (m model) currentReturnMode() uiMode {
+	switch m.mode {
+	case modeInput:
+		return primaryReturnMode(m.input.ReturnMode)
+	case modeConfirm:
+		return primaryReturnMode(m.confirm.ReturnMode)
+	case modeMenu:
+		return primaryReturnMode(m.menu.ReturnMode)
+	default:
+		return primaryReturnMode(m.mode)
+	}
+}
+
+func (m *model) clearOverlayState() {
+	switch m.mode {
+	case modeInput:
+		m.input = inputState{}
+	case modeConfirm:
+		m.confirm = confirmState{}
+	case modeMenu:
+		m.menu = menuState{}
+	}
 }
 
 func primaryReturnMode(mode uiMode) uiMode {
@@ -170,8 +211,8 @@ func validateItemMenu(menu ItemMenu, keys KeyMap) error {
 		return fmt.Errorf("selected item has no available actions")
 	}
 	used := map[string]ActionID{"ctrl+c": ActionQuit}
-	for _, action := range []ActionID{ActionCancel, ActionConfirm, ActionMoveUp, ActionMoveDown} {
-		for _, bound := range keys.Keys(KeyModeMenu, action) {
+	for action, binding := range keys.bindings[KeyModeMenu] {
+		for _, bound := range binding.Keys() {
 			used[bound] = action
 		}
 	}
@@ -180,11 +221,14 @@ func validateItemMenu(menu ItemMenu, keys KeyMap) error {
 		if entry.Action == "" || strings.TrimSpace(entry.Label) == "" {
 			return fmt.Errorf("menu entry has an invalid action or label")
 		}
+		if isMenuControl(entry.Action) {
+			return fmt.Errorf("menu action %q is reserved for menu controls", entry.Action)
+		}
 		if _, exists := actions[entry.Action]; exists {
 			return fmt.Errorf("menu action %q appears more than once", entry.Action)
 		}
 		for _, bound := range keys.Keys(keys.menuMode(entry.Action), entry.Action) {
-			if previous, exists := used[bound]; exists {
+			if previous, exists := used[bound]; exists && previous != entry.Action {
 				return fmt.Errorf("menu key %q is assigned to %q and %q", bound, previous, entry.Action)
 			}
 			used[bound] = entry.Action

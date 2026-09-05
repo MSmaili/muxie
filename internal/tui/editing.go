@@ -6,25 +6,39 @@ import (
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/MSmaili/hetki/internal/tui/list"
 	"github.com/charmbracelet/x/ansi"
 )
 
-func editEndOfLine(value string, keys KeyMap, mode KeyMode, msg tea.KeyPressMsg) (string, bool) {
-	switch {
-	case keys.Matches(mode, ActionBackspace, msg):
+func handleBackspace(m model, _ list.ItemID) (tea.Model, tea.Cmd) {
+	return m.editValue(ActionBackspace, func(value string) string {
 		runes := []rune(value)
-		if len(runes) > 0 {
-			value = string(runes[:len(runes)-1])
+		if len(runes) == 0 {
+			return value
 		}
-		return value, true
-	case keys.Matches(mode, ActionDeleteWord, msg):
-		return deleteLastWord(value), true
-	case keys.Matches(mode, ActionDeleteToStart, msg):
-		return "", true
-	case msg.Text != "":
-		return value + msg.Text, true
+		return string(runes[:len(runes)-1])
+	})
+}
+
+func handleDeleteWord(m model, _ list.ItemID) (tea.Model, tea.Cmd) {
+	return m.editValue(ActionDeleteWord, deleteLastWord)
+}
+
+func handleDeleteToStart(m model, _ list.ItemID) (tea.Model, tea.Cmd) {
+	return m.editValue(ActionDeleteToStart, func(string) string { return "" })
+}
+
+func (m model) editValue(action ActionID, edit func(string) string) (tea.Model, tea.Cmd) {
+	switch m.mode {
+	case modeFilter:
+		m.items.SetQuery(edit(m.items.Query()))
+		return m.reflow(), nil
+	case modeInput:
+		m.input.Value = edit(m.input.Value)
+		m.err = nil
+		return m, nil
 	default:
-		return value, false
+		return m.actionUnavailable(action)
 	}
 }
 

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -121,6 +122,16 @@ func TestUpdateRoutesKeysByModeAndOverlay(t *testing.T) {
 	requireQuit(t, cmd)
 }
 
+func TestEnteringFilterPreservesExistingError(t *testing.T) {
+	want := errors.New("stale target")
+	m := browseModel(newModel(interactionSnapshot(), nil))
+	m.err = want
+
+	m, _ = updateModel(t, m, printableKey("/"))
+	require.Equal(t, modeFilter, m.mode)
+	require.ErrorIs(t, m.err, want)
+}
+
 func TestEnterOpensSelectedItemFromFilter(t *testing.T) {
 	var got ActionRequest
 	m := newModel(interactionSnapshot(), func(request ActionRequest) (ActionResult, error) {
@@ -169,6 +180,66 @@ func TestDirectActionKeysEmitStableActionAndItemIDs(t *testing.T) {
 			require.NotNil(t, cmd)
 			cmd()
 			require.Equal(t, test.want, got)
+		})
+	}
+}
+
+func TestBoundDeleteSessionUsesOneActionFlowInEveryMode(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		mode       uiMode
+		keyMode    KeyMode
+		returnMode uiMode
+	}{
+		{name: "normal", mode: modeBrowse, keyMode: KeyModeNormal, returnMode: modeBrowse},
+		{name: "jump", mode: modeJump, keyMode: KeyModeJump, returnMode: modeBrowse},
+		{name: "filter", mode: modeFilter, keyMode: KeyModeFilter, returnMode: modeFilter},
+		{name: "input", mode: modeInput, keyMode: KeyModeInput, returnMode: modeFilter},
+		{name: "confirm", mode: modeConfirm, keyMode: KeyModeConfirm, returnMode: modeFilter},
+		{name: "menu", mode: modeMenu, keyMode: KeyModeMenu, returnMode: modeFilter},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			bindings := map[KeyMode][]Binding{
+				test.keyMode: {{Action: ActionDeleteSession, Keys: []string{"z"}}},
+			}
+			if test.keyMode == KeyModeConfirm {
+				bindings[KeyModeConfirm] = append(bindings[KeyModeConfirm], Binding{Action: ActionConfirm, Keys: []string{"y"}})
+			} else {
+				bindings[KeyModeConfirm] = []Binding{{Action: ActionConfirm, Keys: []string{"y"}}}
+			}
+			keys, err := ResolveKeyMap(bindings)
+			require.NoError(t, err)
+
+			var requests []ActionRequest
+			m, err := newModelWithKeys(interactionSnapshot(), func(request ActionRequest) (ActionResult, error) {
+				requests = append(requests, request)
+				if !request.Confirmed {
+					return ActionResult{Confirmation: &Confirmation{Title: "DELETE", Body: "Delete session?"}}, nil
+				}
+				return ActionResult{}, nil
+			}, keys)
+			require.NoError(t, err)
+			m = selectNode(t, browseModel(m), "window-2")
+			m.mode = test.mode
+			m.input = inputState{Value: "name", ReturnMode: test.returnMode}
+			m.confirm = confirmState{ReturnMode: test.returnMode}
+			m.menu = menuState{ItemID: "window-2", Entries: []MenuEntry{{Action: ActionDeleteSession, Label: "Delete session"}}, ReturnMode: test.returnMode}
+
+			m, cmd := updateModel(t, m, printableKey("z"))
+			require.NotNil(t, cmd)
+			m, _ = updateModel(t, m, cmd())
+			require.Equal(t, modeConfirm, m.mode)
+			require.Equal(t, test.returnMode, m.confirm.ReturnMode)
+			require.Equal(t, []ActionRequest{{ActionID: ActionDeleteSession, ItemID: "window-2"}}, requests)
+
+			m, cmd = updateModel(t, m, printableKey("y"))
+			require.NotNil(t, cmd)
+			require.Equal(t, test.returnMode, m.mode)
+			cmd()
+			require.Equal(t, []ActionRequest{
+				{ActionID: ActionDeleteSession, ItemID: "window-2"},
+				{ActionID: ActionDeleteSession, ItemID: "window-2", Confirmed: true},
+			}, requests)
 		})
 	}
 }

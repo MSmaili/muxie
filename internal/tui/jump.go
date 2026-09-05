@@ -87,24 +87,20 @@ func (j *jumpState) enter(text string) (list.ItemID, bool, bool) {
 	return "", false, false
 }
 
-func (m model) updateJumpMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case m.keys.Matches(KeyModeJump, ActionCancel, msg):
-		m.cancelJump()
+func handleJump(m model, _ list.ItemID) (tea.Model, tea.Cmd) {
+	jump := newJumpState(m.items.VisibleRows())
+	if len(jump.candidates) == 0 {
 		return m, nil
-	case m.keys.Matches(KeyModeJump, ActionMoveUp, msg):
-		m.moveJump(-1)
-		return m, nil
-	case m.keys.Matches(KeyModeJump, ActionMoveDown, msg):
-		m.moveJump(1)
-		return m, nil
-	case m.keys.Matches(KeyModeJump, ActionFilter, msg):
-		m.cancelJump()
-		m.mode = modeFilter
-		return m, nil
-	case m.keys.Matches(KeyModeJump, ActionToggleProjection, msg):
-		return m.startProjectionToggle()
 	}
+	m.clearOverlayState()
+	m.jump = jump
+	m.mode = modeJump
+	m.initialJump = false
+	m.err = nil
+	return m, nil
+}
+
+func (m model) updateJumpInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.Text == "" {
 		return m, nil
 	}
@@ -120,7 +116,7 @@ func (m model) updateJumpMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	m.mode = modeBrowse
 	m.jump = jumpState{}
-	return m.startAction(ActionOpen, itemID)
+	return m.dispatchAction(ActionOpen, itemID)
 }
 
 func (m *model) moveJump(delta int) {
@@ -134,6 +130,19 @@ func (m *model) moveJump(delta int) {
 	if ok {
 		m.items.Select(target)
 	}
+}
+
+func (m *model) selectJumpEdge(last bool) {
+	m.jump.input = ""
+	m.err = nil
+	if len(m.jump.candidates) == 0 {
+		return
+	}
+	index := 0
+	if last {
+		index = len(m.jump.candidates) - 1
+	}
+	m.items.Select(m.jump.candidates[index].itemID)
 }
 
 func (m *model) startInitialJump() {

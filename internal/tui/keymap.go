@@ -31,35 +31,51 @@ type KeyMap struct {
 func ResolveKeyMap(bindings map[KeyMode][]Binding) (KeyMap, error) {
 	resolved := KeyMap{bindings: make(map[KeyMode]map[ActionID]key.Binding, len(bindings))}
 	for mode, modeBindings := range bindings {
-		actions := make(map[ActionID]key.Binding, len(modeBindings))
-		used := make(map[string]ActionID)
-		for _, binding := range modeBindings {
-			if binding.Action == "" || len(binding.Keys) == 0 {
-				return KeyMap{}, fmt.Errorf("mode %q has an empty action or key list", mode)
-			}
-			if _, exists := actions[binding.Action]; exists {
-				return KeyMap{}, fmt.Errorf("mode %q defines action %q more than once", mode, binding.Action)
-			}
-			keys := make([]string, len(binding.Keys))
-			for i, raw := range binding.Keys {
-				value := strings.TrimSpace(raw)
-				if value == "" {
-					return KeyMap{}, fmt.Errorf("mode %q action %q has an empty key", mode, binding.Action)
-				}
-				if value == "ctrl+c" {
-					return KeyMap{}, fmt.Errorf("ctrl+c is reserved for emergency quit")
-				}
-				if previous, exists := used[value]; exists {
-					return KeyMap{}, fmt.Errorf("mode %q key %q is assigned to %q and %q", mode, value, previous, binding.Action)
-				}
-				used[value] = binding.Action
-				keys[i] = value
-			}
-			actions[binding.Action] = key.NewBinding(key.WithKeys(keys...))
+		actions, err := resolveModeBindings(mode, modeBindings)
+		if err != nil {
+			return KeyMap{}, err
 		}
 		resolved.bindings[mode] = actions
 	}
 	return resolved, nil
+}
+
+func resolveModeBindings(mode KeyMode, bindings []Binding) (map[ActionID]key.Binding, error) {
+	actions := make(map[ActionID]key.Binding, len(bindings))
+	used := make(map[string]ActionID)
+	for _, binding := range bindings {
+		if binding.Action == "" || len(binding.Keys) == 0 {
+			return nil, fmt.Errorf("mode %q has an empty action or key list", mode)
+		}
+		if _, exists := actions[binding.Action]; exists {
+			return nil, fmt.Errorf("mode %q defines action %q more than once", mode, binding.Action)
+		}
+		keys, err := resolveBindingKeys(mode, binding, used)
+		if err != nil {
+			return nil, err
+		}
+		actions[binding.Action] = key.NewBinding(key.WithKeys(keys...))
+	}
+	return actions, nil
+}
+
+func resolveBindingKeys(mode KeyMode, binding Binding, used map[string]ActionID) ([]string, error) {
+	keys := make([]string, len(binding.Keys))
+	for i, raw := range binding.Keys {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			return nil, fmt.Errorf("mode %q action %q has an empty key", mode, binding.Action)
+		}
+		if value == "ctrl+c" {
+			return nil, fmt.Errorf("ctrl+c is reserved for emergency quit")
+		}
+		if previous, exists := used[value]; exists {
+			return nil, fmt.Errorf("mode %q key %q is assigned to %q and %q", mode, value, previous, binding.Action)
+		}
+		used[value] = binding.Action
+		keys[i] = value
+	}
+	return keys, nil
 }
 
 func DefaultKeyMap() KeyMap {
@@ -158,4 +174,13 @@ func (k KeyMap) Keys(mode KeyMode, action ActionID) []string {
 func (k KeyMap) Matches(mode KeyMode, action ActionID, msg tea.KeyPressMsg) bool {
 	binding, ok := k.bindings[mode][action]
 	return ok && key.Matches(msg, binding)
+}
+
+func (k KeyMap) Action(mode KeyMode, msg tea.KeyPressMsg) (ActionID, bool) {
+	for action, binding := range k.bindings[mode] {
+		if key.Matches(msg, binding) {
+			return action, true
+		}
+	}
+	return "", false
 }

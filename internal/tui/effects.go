@@ -85,12 +85,74 @@ func (m *model) selectAfterDelete(deletedID, preferred list.ItemID, previousRows
 	}
 }
 
-func (m model) startProjectionToggle() (tea.Model, tea.Cmd) {
-	var itemID list.ItemID
-	if selected, ok := m.selectedRow(); ok {
-		itemID = selected.Item.ID
+func requiresMenuEntry(action ActionID) bool {
+	switch action {
+	case ActionContextMenu, ActionCreateSession, ActionCreateWindow, ActionRename, ActionRenameSession,
+		ActionDelete, ActionDeleteSession, ActionRefresh, ActionToggleProjection, ActionOpen:
+		return true
+	default:
+		return false
+	}
+}
+
+func handleContextMenu(m model, itemID list.ItemID) (tea.Model, tea.Cmd) {
+	return m.startItemAction(ActionContextMenu, itemID)
+}
+
+func handleCreateSession(m model, itemID list.ItemID) (tea.Model, tea.Cmd) {
+	return m.startAction(ActionCreateSession, itemID)
+}
+
+func handleCreateWindow(m model, itemID list.ItemID) (tea.Model, tea.Cmd) {
+	return m.startItemAction(ActionCreateWindow, itemID)
+}
+
+func handleRename(m model, itemID list.ItemID) (tea.Model, tea.Cmd) {
+	return m.startItemAction(ActionRename, itemID)
+}
+
+func handleRenameSession(m model, itemID list.ItemID) (tea.Model, tea.Cmd) {
+	return m.startItemAction(ActionRenameSession, itemID)
+}
+
+func handleDelete(m model, itemID list.ItemID) (tea.Model, tea.Cmd) {
+	return m.startItemAction(ActionDelete, itemID)
+}
+
+func handleDeleteSession(m model, itemID list.ItemID) (tea.Model, tea.Cmd) {
+	return m.startItemAction(ActionDeleteSession, itemID)
+}
+
+func handleRefresh(m model, itemID list.ItemID) (tea.Model, tea.Cmd) {
+	return m.startAction(ActionRefresh, itemID)
+}
+
+func handleToggleProjection(m model, itemID list.ItemID) (tea.Model, tea.Cmd) {
+	if itemID == "" {
+		if selected, ok := m.selectedRow(); ok {
+			itemID = selected.Item.ID
+		}
 	}
 	return m.startAction(ActionToggleProjection, itemID)
+}
+
+func handleOpen(m model, itemID list.ItemID) (tea.Model, tea.Cmd) {
+	switch m.mode {
+	case modeJump:
+		m.cancelJump()
+	case modeFilter:
+		if itemID == "" {
+			m.mode = modeBrowse
+		}
+	}
+	return m.startItemAction(ActionOpen, itemID)
+}
+
+func (m model) startItemAction(action ActionID, itemID list.ItemID) (tea.Model, tea.Cmd) {
+	if itemID != "" {
+		return m.startAction(action, itemID)
+	}
+	return m.startSelectedRequest(action)
 }
 
 func (m model) startSelectedRequest(action ActionID) (tea.Model, tea.Cmd) {

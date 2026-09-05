@@ -9,6 +9,60 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestBoundModeTransitionsDiscardTheOwnedOverlay(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		mode     uiMode
+		keyMode  KeyMode
+		action   ActionID
+		wantMode uiMode
+	}{
+		{name: "input to filter", mode: modeInput, keyMode: KeyModeInput, action: ActionFilter, wantMode: modeFilter},
+		{name: "confirmation to jump", mode: modeConfirm, keyMode: KeyModeConfirm, action: ActionJump, wantMode: modeJump},
+		{name: "menu to filter", mode: modeMenu, keyMode: KeyModeMenu, action: ActionFilter, wantMode: modeFilter},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			keys, err := ResolveKeyMap(map[KeyMode][]Binding{
+				test.keyMode: {{Action: test.action, Keys: []string{"z"}}},
+			})
+			require.NoError(t, err)
+			m, err := newModelWithKeys(interactionSnapshot(), nil, keys)
+			require.NoError(t, err)
+			m = browseModel(m)
+			m.mode = test.mode
+			m.input = inputState{Value: "unfinished"}
+			m.confirm = confirmState{Body: "unfinished"}
+			m.menu = menuState{Title: "unfinished"}
+
+			m, _ = updateModel(t, m, printableKey("z"))
+			require.Equal(t, test.wantMode, m.mode)
+			switch test.mode {
+			case modeInput:
+				require.Equal(t, inputState{}, m.input)
+			case modeConfirm:
+				require.Equal(t, confirmState{}, m.confirm)
+			case modeMenu:
+				require.Equal(t, menuState{}, m.menu)
+			}
+		})
+	}
+
+	keys, err := ResolveKeyMap(map[KeyMode][]Binding{
+		KeyModeInput: {{Action: ActionJump, Keys: []string{"z"}}},
+	})
+	require.NoError(t, err)
+	m, err := newModelWithKeys(interactionSnapshot(), nil, keys)
+	require.NoError(t, err)
+	m = browseModel(m)
+	m.items.SetQuery("no matches")
+	m.mode = modeInput
+	m.input = inputState{Value: "unfinished"}
+
+	m, _ = updateModel(t, m, printableKey("z"))
+	require.Equal(t, modeInput, m.mode)
+	require.Equal(t, "unfinished", m.input.Value)
+}
+
 func TestEmptyInputFeedbackIsVisibleAndClearsWhenEditingOrCanceling(t *testing.T) {
 	newInputModel := func() model {
 		m := browseModel(newModel(interactionSnapshot(), nil))

@@ -1,6 +1,11 @@
 package tui
 
-import "github.com/MSmaili/hetki/internal/tui/list"
+import (
+	"fmt"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/MSmaili/hetki/internal/tui/list"
+)
 
 type ActionID string
 
@@ -37,6 +42,90 @@ const (
 	ActionToggleProjection ActionID = "toggle_projection"
 	ActionOpen             ActionID = "open"
 )
+
+// declaredActions is the authoritative action set checked against actionHandlers.
+var declaredActions = [...]ActionID{
+	ActionQuit,
+	ActionMoveUp,
+	ActionMoveDown,
+	ActionMoveTop,
+	ActionMoveBottom,
+	ActionPageUp,
+	ActionPageDown,
+	ActionFilter,
+	ActionJump,
+	ActionNextMatch,
+	ActionPrevMatch,
+	ActionClearFilter,
+	ActionContextMenu,
+	ActionCreateSession,
+	ActionCreateWindow,
+	ActionRename,
+	ActionRenameSession,
+	ActionDelete,
+	ActionDeleteSession,
+	ActionExpand,
+	ActionCollapse,
+	ActionExpandAll,
+	ActionCollapseAll,
+	ActionBackspace,
+	ActionDeleteWord,
+	ActionDeleteToStart,
+	ActionCancel,
+	ActionConfirm,
+	ActionRefresh,
+	ActionToggleProjection,
+	ActionOpen,
+}
+
+type actionHandler func(model, list.ItemID) (tea.Model, tea.Cmd)
+
+var actionHandlers map[ActionID]actionHandler
+
+func init() {
+	actionHandlers = map[ActionID]actionHandler{
+		ActionQuit:             handleQuit,
+		ActionMoveUp:           handleMoveUp,
+		ActionMoveDown:         handleMoveDown,
+		ActionMoveTop:          handleMoveTop,
+		ActionMoveBottom:       handleMoveBottom,
+		ActionPageUp:           handlePageUp,
+		ActionPageDown:         handlePageDown,
+		ActionFilter:           handleFilter,
+		ActionJump:             handleJump,
+		ActionNextMatch:        handleNextMatch,
+		ActionPrevMatch:        handlePrevMatch,
+		ActionClearFilter:      handleClearFilter,
+		ActionContextMenu:      handleContextMenu,
+		ActionCreateSession:    handleCreateSession,
+		ActionCreateWindow:     handleCreateWindow,
+		ActionRename:           handleRename,
+		ActionRenameSession:    handleRenameSession,
+		ActionDelete:           handleDelete,
+		ActionDeleteSession:    handleDeleteSession,
+		ActionExpand:           handleExpand,
+		ActionCollapse:         handleCollapse,
+		ActionExpandAll:        handleExpandAll,
+		ActionCollapseAll:      handleCollapseAll,
+		ActionBackspace:        handleBackspace,
+		ActionDeleteWord:       handleDeleteWord,
+		ActionDeleteToStart:    handleDeleteToStart,
+		ActionCancel:           handleCancel,
+		ActionConfirm:          handleConfirm,
+		ActionRefresh:          handleRefresh,
+		ActionToggleProjection: handleToggleProjection,
+		ActionOpen:             handleOpen,
+	}
+}
+
+func (m model) dispatchAction(action ActionID, itemID list.ItemID) (tea.Model, tea.Cmd) {
+	handler, ok := actionHandlers[action]
+	if !ok {
+		m.err = fmt.Errorf("action %q is not implemented", action)
+		return m, nil
+	}
+	return handler(m, itemID)
+}
 
 type BackendTarget string
 

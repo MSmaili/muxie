@@ -6,6 +6,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestEveryDeclaredActionHasHandler(t *testing.T) {
+	remaining := make(map[ActionID]struct{}, len(actionHandlers))
+	for action, handler := range actionHandlers {
+		require.NotNil(t, handler, "nil handler for %s", action)
+		remaining[action] = struct{}{}
+	}
+	for _, action := range declaredActions {
+		require.Contains(t, remaining, action, "missing handler for %s", action)
+		delete(remaining, action)
+	}
+	require.Empty(t, remaining, "handlers exist for undeclared actions")
+}
+
 func TestResolveKeyMapRejectsSameModeCollisionsAndReservedQuit(t *testing.T) {
 	_, err := ResolveKeyMap(map[KeyMode][]Binding{KeyModeNormal: {
 		{Action: ActionQuit, Keys: []string{"q"}},

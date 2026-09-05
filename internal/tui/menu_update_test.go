@@ -354,6 +354,7 @@ func TestContextMenuRejectsEmptyAndInvalidEntries(t *testing.T) {
 		{name: "invalid action", menu: ItemMenu{Entries: []MenuEntry{{Label: "Open"}}}, want: "invalid action or label"},
 		{name: "invalid label", menu: ItemMenu{Entries: []MenuEntry{{Action: ActionOpen, Label: " "}}}, want: "invalid action or label"},
 		{name: "duplicate action", menu: ItemMenu{Entries: []MenuEntry{{Action: ActionOpen, Label: "Open"}, {Action: ActionOpen, Label: "Again"}}}, want: "appears more than once"},
+		{name: "reserved control action", menu: ItemMenu{Entries: []MenuEntry{{Action: ActionCancel, Label: "Cancel"}}}, want: "reserved for menu controls"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			m := newModel(interactionSnapshot(), func(ActionRequest) (ActionResult, error) {
@@ -381,6 +382,12 @@ func TestContextMenuRejectsResolvedFallbackKeyCollisions(t *testing.T) {
 			normal:  Binding{Action: ActionRename, Keys: []string{"o"}},
 			menu:    Binding{Action: ActionOpen, Keys: []string{"o"}},
 			entries: []MenuEntry{{Action: ActionOpen, Label: "Open"}, {Action: ActionRename, Label: "Rename"}},
+		},
+		{
+			name: "absent menu action shadows inherited entry", key: "o",
+			normal:  Binding{Action: ActionRename, Keys: []string{"o"}},
+			menu:    Binding{Action: ActionOpen, Keys: []string{"o"}},
+			entries: []MenuEntry{{Action: ActionRename, Label: "Rename"}},
 		},
 		{
 			name: "entry with menu control", key: "down",
