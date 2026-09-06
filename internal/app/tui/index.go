@@ -31,6 +31,7 @@ type liveItem struct {
 	WindowIndex    int
 	WindowActive   bool
 	PaneActive     bool
+	Last           bool
 }
 
 type itemIndex map[list.ItemID]liveItem

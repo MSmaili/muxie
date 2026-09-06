@@ -132,6 +132,10 @@ func projectFlatDestination(
 		WindowIndex:    window.Index,
 		WindowActive:   window.Active,
 		PaneActive:     pane.Active,
+		Last:           session.Last && window.Active && pane.Active,
+	}
+	if destination.Last {
+		item.Primary += " ↶"
 	}
 	return item, destination, nil
 }

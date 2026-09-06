@@ -46,7 +46,7 @@ func (b *TmuxBackend) QueryState(ctx context.Context) (backend.StateResult, erro
 	}
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
-	result, err := RunQuery(ctx, b.client, LoadStateQuery{})
+	result, err := RunQuery(ctx, b.client, LoadStateQuery{IncludeClients: isInsideTmux()})
 
 	// tmux exits non-zero when list-panes runs against an empty server, after the
 	// chained show-options calls have already emitted valid base indexes.
@@ -55,6 +55,7 @@ func (b *TmuxBackend) QueryState(ctx context.Context) (backend.StateResult, erro
 		return backend.StateResult{}, err
 	}
 
+	currentClient := invokingClient(result.clients)
 	sessions := make([]backend.Session, len(result.Sessions))
 	for i, s := range result.Sessions {
 		windows := make([]backend.Window, len(s.Windows))
@@ -84,6 +85,7 @@ func (b *TmuxBackend) QueryState(ctx context.Context) (backend.StateResult, erro
 			ID:            s.ID,
 			Name:          s.Name,
 			WorkspacePath: s.WorkspacePath,
+			Last:          currentClient.lastSession != "" && s.Name == currentClient.lastSession && s.ID != currentClient.sessionID,
 			Windows:       windows,
 		}
 	}

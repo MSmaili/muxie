@@ -18,6 +18,7 @@ import (
 type stubBackend struct {
 	state       backend.StateResult
 	stateErr    error
+	queryCalls  int
 	applyErr    error
 	applyCalls  [][]backend.Action
 	applyHook   func([]backend.Action)
@@ -29,6 +30,7 @@ type stubBackend struct {
 func (s *stubBackend) Name() string { return "stub" }
 
 func (s *stubBackend) QueryState(context.Context) (backend.StateResult, error) {
+	s.queryCalls++
 	if s.stateErr != nil {
 		return backend.StateResult{}, s.stateErr
 	}

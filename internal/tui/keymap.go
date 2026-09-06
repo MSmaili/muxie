@@ -107,8 +107,10 @@ func DefaultKeyMap() KeyMap {
 			{Action: ActionRefresh, Keys: []string{"ctrl+r"}},
 			{Action: ActionToggleProjection, Keys: []string{"tab"}},
 			{Action: ActionOpen, Keys: []string{"enter", "ctrl+y"}},
+			{Action: ActionLastSession, Keys: []string{"ctrl+o"}},
 		},
 		KeyModeJump: {
+			{Action: ActionLastSession, Keys: []string{"ctrl+o"}},
 			{Action: ActionCancel, Keys: []string{"esc"}},
 			{Action: ActionMoveUp, Keys: []string{"ctrl+p"}},
 			{Action: ActionMoveDown, Keys: []string{"ctrl+n"}},
@@ -116,10 +118,12 @@ func DefaultKeyMap() KeyMap {
 			{Action: ActionToggleProjection, Keys: []string{"tab"}},
 		},
 		KeyModeFilter: {
+			{Action: ActionLastSession, Keys: []string{"ctrl+o"}},
 			{Action: ActionCancel, Keys: []string{"esc"}},
 			{Action: ActionConfirm, Keys: []string{"enter", "ctrl+y"}},
 			{Action: ActionMoveUp, Keys: []string{"up", "ctrl+p"}},
 			{Action: ActionMoveDown, Keys: []string{"down", "ctrl+n"}},
+			{Action: ActionJump, Keys: []string{"ctrl+;"}},
 			{Action: ActionPageUp, Keys: []string{"pgup"}},
 			{Action: ActionPageDown, Keys: []string{"pgdown"}},
 			{Action: ActionBackspace, Keys: []string{"backspace", "delete"}},

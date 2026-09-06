@@ -41,6 +41,7 @@ const (
 	ActionRefresh          ActionID = "refresh"
 	ActionToggleProjection ActionID = "toggle_projection"
 	ActionOpen             ActionID = "open"
+	ActionLastSession      ActionID = "last_session"
 )
 
 // declaredActions is the authoritative action set checked against actionHandlers.
@@ -76,6 +77,7 @@ var declaredActions = [...]ActionID{
 	ActionRefresh,
 	ActionToggleProjection,
 	ActionOpen,
+	ActionLastSession,
 }
 
 type actionHandler func(model, list.ItemID) (tea.Model, tea.Cmd)
@@ -115,6 +117,7 @@ func init() {
 		ActionRefresh:          handleRefresh,
 		ActionToggleProjection: handleToggleProjection,
 		ActionOpen:             handleOpen,
+		ActionLastSession:      handleLastSession,
 	}
 }
 

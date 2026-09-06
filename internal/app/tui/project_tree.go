@@ -95,9 +95,14 @@ func appendTreeWindow(
 		fields = append(fields, list.SearchField{Tier: list.SearchSecondary, Text: path})
 	}
 
+	last := session.Last && window.Active
+	primary := windowIcon + " " + label
+	if last {
+		primary += " ↶"
+	}
 	sessionItem.Children = append(sessionItem.Children, list.Item{
 		ID:           windowID,
-		Primary:      windowIcon + " " + label,
+		Primary:      primary,
 		Secondary:    path,
 		SearchFields: fields,
 	})
@@ -117,6 +122,7 @@ func appendTreeWindow(
 		SessionTarget:  session.ID,
 		WindowIndex:    window.Index,
 		WindowActive:   window.Active,
+		Last:           last,
 	}
 	return nil
 }

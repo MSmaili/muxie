@@ -45,6 +45,13 @@ func (a *LiveAdapter) Execute(ctx context.Context, request ui.ActionRequest) (ui
 		}
 	}
 	switch request.ActionID {
+	case ui.ActionLastSession:
+		for _, item := range a.index {
+			if item.Last {
+				return a.openItem(ctx, item)
+			}
+		}
+		return ui.ActionResult{}, fmt.Errorf("no previous session available")
 	case ui.ActionRefresh:
 		snapshot, err := a.loadSnapshot(ctx)
 		return ui.ActionResult{Message: "refreshed", Snapshot: &snapshot}, err

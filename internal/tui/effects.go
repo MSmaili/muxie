@@ -136,6 +136,10 @@ func handleToggleProjection(m model, itemID list.ItemID) (tea.Model, tea.Cmd) {
 	return m.startAction(ActionToggleProjection, itemID)
 }
 
+func handleLastSession(m model, _ list.ItemID) (tea.Model, tea.Cmd) {
+	return m.startAction(ActionLastSession, "")
+}
+
 func handleOpen(m model, itemID list.ItemID) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case modeJump:
@@ -166,7 +170,7 @@ func (m model) startSelectedRequest(action ActionID) (tea.Model, tea.Cmd) {
 func (m model) startAction(action ActionID, itemID list.ItemID) (tea.Model, tea.Cmd) {
 	status := statusRunningAction
 	switch action {
-	case ActionOpen:
+	case ActionOpen, ActionLastSession:
 		status = statusSwitching
 	case ActionRefresh:
 		status = statusRefreshing

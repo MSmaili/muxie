@@ -146,6 +146,46 @@ func TestEnterOpensSelectedItemFromFilter(t *testing.T) {
 	require.Equal(t, ActionRequest{ActionID: ActionOpen, ItemID: "window-2"}, got)
 }
 
+func TestLastSessionKeyWorksWithoutVisibleRowsAndRespectsOverlays(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		mode uiMode
+		busy bool
+	}{
+		{name: "normal", mode: modeBrowse},
+		{name: "filter", mode: modeFilter},
+		{name: "jump", mode: modeJump},
+		{name: "input", mode: modeInput},
+		{name: "confirmation", mode: modeConfirm},
+		{name: "menu", mode: modeMenu},
+		{name: "busy", mode: modeBrowse, busy: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			unavailable := errors.New("no previous session available")
+			m := newModel(interactionSnapshot(), func(request ActionRequest) (ActionResult, error) {
+				require.Equal(t, ActionRequest{ActionID: ActionLastSession}, request)
+				return ActionResult{}, unavailable
+			})
+			m.items.SetQuery("no-match")
+			require.Empty(t, m.items.Rows())
+			m.mode, m.busy = test.mode, test.busy
+			m, cmd := updateModel(t, m, controlKey('o'))
+			if test.busy || test.mode == modeInput || test.mode == modeConfirm || test.mode == modeMenu {
+				require.Nil(t, cmd)
+				return
+			}
+			require.NotNil(t, cmd)
+			require.True(t, m.busy)
+			m, cmd = updateModel(t, m, cmd())
+			require.Nil(t, cmd)
+			require.False(t, m.busy)
+			require.ErrorIs(t, m.err, unavailable)
+			require.Equal(t, test.mode, m.mode)
+			require.Equal(t, "no-match", m.items.Query())
+		})
+	}
+}
+
 func TestDirectActionKeysEmitStableActionAndItemIDs(t *testing.T) {
 	for _, test := range []struct {
 		name       string

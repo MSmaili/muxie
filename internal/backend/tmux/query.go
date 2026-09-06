@@ -44,6 +44,7 @@ type LoadStateResult struct {
 	Active          ActiveContext
 	PaneBaseIndex   int
 	WindowBaseIndex int
+	clients         []clientState
 }
 
 type ActiveContext struct {
@@ -57,16 +58,22 @@ type ActiveContext struct {
 	Path        string
 }
 
-type LoadStateQuery struct{}
+type LoadStateQuery struct {
+	IncludeClients bool
+}
 
 func (q LoadStateQuery) Args() []string {
-	return []string{
+	args := []string{
 		"start-server",
 		";", "show-options", "-gv", "base-index",
 		";", "show-options", "-gv", "pane-base-index",
 		";", "list-panes", "-a",
 		"-F", "#{session_id}|#{q:session_name}|#{window_id}|#{q:window_name}|#{window_index}|#{window_layout}|#{window_zoomed_flag}|#{window_active}|#{pane_id}|#{pane_index}|#{pane_active}|#{q:pane_current_path}|#{q:pane_current_command}|#{q:" + backend.WorkspacePathOption + "}",
 	}
+	if q.IncludeClients {
+		args = append(args, ";", "list-clients", "-F", "client|#{session_id}|#{pane_id}|#{q:client_last_session}")
+	}
+	return args
 }
 
 func (q LoadStateQuery) Parse(output string) (LoadStateResult, error) {
@@ -96,6 +103,14 @@ func (q LoadStateQuery) Parse(output string) (LoadStateResult, error) {
 	for i, line := range lines[2:] {
 		if line == "" {
 			return LoadStateResult{}, fmt.Errorf("invalid tmux pane row %d: blank line means a value contained a newline", i+1)
+		}
+		if q.IncludeClients && strings.HasPrefix(line, "client|") {
+			client, err := parseClientLine(line)
+			if err != nil {
+				return LoadStateResult{}, fmt.Errorf("invalid tmux client row: %w", err)
+			}
+			result.clients = append(result.clients, client)
+			continue
 		}
 		p, err := parsePaneLine(line)
 		if err != nil {
@@ -311,4 +326,49 @@ func getCurrentSessionID() string {
 		return ""
 	}
 	return "$" + parts[2]
+}
+
+type clientState struct {
+	sessionID   string
+	paneID      string
+	lastSession string
+}
+
+func parseClientLine(line string) (clientState, error) {
+	fields, err := parseFields(line, 4)
+	if err != nil {
+		return clientState{}, err
+	}
+	if err := validateObjectID("client session", fields[1], '$'); err != nil {
+		return clientState{}, err
+	}
+	if err := validateObjectID("client pane", fields[2], '%'); err != nil {
+		return clientState{}, err
+	}
+	return clientState{sessionID: fields[1], paneID: fields[2], lastSession: fields[3]}, nil
+}
+
+func invokingClient(clients []clientState) clientState {
+	if !isInsideTmux() {
+		return clientState{}
+	}
+	pane, session := os.Getenv("TMUX_PANE"), getCurrentSessionID()
+	// Popup jobs have TMUX's session ID but usually no TMUX_PANE.
+	if (pane != "" && validateObjectID("invoking pane", pane, '%') != nil) ||
+		(pane == "" && validateObjectID("invoking session", session, '$') != nil) {
+		return clientState{}
+	}
+	var found clientState
+	for _, client := range clients {
+		if (pane != "" && client.paneID != pane) || (pane == "" && client.sessionID != session) {
+			continue
+		}
+		if found.sessionID != "" {
+			// ponytail: shared contexts are ambiguous; add explicit popup
+			// client identity if that use case needs an indicator.
+			return clientState{}
+		}
+		found = client
+	}
+	return found
 }
