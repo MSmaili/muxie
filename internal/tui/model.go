@@ -22,7 +22,7 @@ func RunWithStartMode(ctx context.Context, initial list.Snapshot, keys KeyMap, s
 	if err != nil {
 		return "", err
 	}
-	p := tea.NewProgram(m, tea.WithContext(ctx))
+	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithFPS(120))
 	final, err := p.Run()
 	if err != nil {
 		return "", err
