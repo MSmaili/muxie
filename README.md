@@ -4,6 +4,9 @@ A keyboard-first tmux workspace manager for Linux and macOS.
 
 > **Alpha:** expect breaking changes. Hetki currently supports tmux only, and its behavior, appearance, and keybindings are not configurable yet.
 
+<img width="736" height="432" alt="image" src="https://github.com/user-attachments/assets/69ed76a6-8690-486d-8a60-1543d11f219b" />
+
+
 ## What it does
 
 - Browse and switch between tmux sessions and windows in an interactive TUI.
